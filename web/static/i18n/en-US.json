@@ -396,7 +396,7 @@
     "stopTask": "Stop task",
     "interruptModalTitle": "Interrupt current step",
     "interruptReasonLabel": "Interrupt note",
-    "interruptModalHint": "Your note is saved as a user message and the agent continues in the same stream. Use \"Stop completely\" to end the task.",
+    "interruptModalHint": "Same as MCP monitor \"Stop tool\": ends only the in-flight tool call; the conversation and this run continue. Optional note is merged into the tool result (bilingual USER INTERRUPT NOTE, not raw CLI). Leave empty for a plain stop. If no tool is running yet (model still thinking), wait for a tool call or use \"Stop completely\".",
     "interruptReasonPlaceholder": "e.g. Tool is too slow—skip and summarize…",
     "interruptReasonRequired": "Please enter a short note so the model can continue accordingly.",
     "interruptSubmitting": "Submitting...",

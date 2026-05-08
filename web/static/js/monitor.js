@@ -356,6 +356,23 @@ function isChatMessagesPinnedToBottom() {
     return scrollHeight - clientHeight - scrollTop <= CHAT_SCROLL_PIN_THRESHOLD_PX;
 }
 
+/** 顶栏「停止任务」与进度条按钮对齐时，用会话 ID 反查当前页的 progress 块 ID（无则弹窗内仍可按会话取消） */
+function findProgressIdByConversationId(conversationId) {
+    if (!conversationId) {
+        return null;
+    }
+    let fallback = null;
+    for (const [pid, st] of progressTaskState) {
+        if (st && st.conversationId === conversationId) {
+            fallback = pid;
+            if (document.getElementById(pid)) {
+                return pid;
+            }
+        }
+    }
+    return fallback;
+}
+
 function registerProgressTask(progressId, conversationId = null) {
     const state = progressTaskState.get(progressId) || {};
     state.conversationId = conversationId !== undefined && conversationId !== null
@@ -412,7 +429,7 @@ async function requestCancel(conversationId) {
     return result;
 }
 
-/** 用户填写说明后中断当前步骤，由后端写入对话并继续同一条流式迭代 */
+/** 与 MCP 监控一致：仅终止当前进行中的工具调用，工具返回后本轮推理继续（可选 reason 合并进工具结果） */
 async function requestCancelWithContinue(conversationId, reason) {
     const response = await apiFetch('/api/agent-loop/cancel', {
         method: 'POST',
@@ -433,7 +450,10 @@ async function requestCancelWithContinue(conversationId, reason) {
 }
 
 function openUserInterruptModal(progressId, conversationId) {
-    userInterruptModalPending = { progressId, conversationId };
+    userInterruptModalPending = {
+        progressId: progressId != null && progressId !== '' ? progressId : null,
+        conversationId,
+    };
     const ta = document.getElementById('user-interrupt-reason');
     if (ta) {
         ta.value = '';
@@ -457,13 +477,9 @@ async function submitUserInterruptContinue() {
         return;
     }
     const reason = (document.getElementById('user-interrupt-reason') && document.getElementById('user-interrupt-reason').value || '').trim();
-    if (!reason) {
-        alert(typeof window.t === 'function' ? window.t('tasks.interruptReasonRequired') : '请填写中断说明');
-        return;
-    }
     const { progressId, conversationId } = userInterruptModalPending;
     closeUserInterruptModal();
-    const stopBtn = document.getElementById(`${progressId}-stop-btn`);
+    const stopBtn = progressId ? document.getElementById(`${progressId}-stop-btn`) : null;
     try {
         if (stopBtn) {
             stopBtn.disabled = true;
@@ -486,9 +502,22 @@ async function submitUserInterruptHardCancel() {
     if (!userInterruptModalPending) {
         return;
     }
-    const { progressId } = userInterruptModalPending;
+    const { progressId, conversationId } = userInterruptModalPending;
     closeUserInterruptModal();
-    await performHardCancelProgressTask(progressId);
+    if (progressId) {
+        await performHardCancelProgressTask(progressId);
+        return;
+    }
+    if (!conversationId) {
+        return;
+    }
+    try {
+        await requestCancel(conversationId);
+        loadActiveTasks();
+    } catch (error) {
+        console.error('取消任务失败:', error);
+        alert((typeof window.t === 'function' ? window.t('tasks.cancelTaskFailed') : '取消任务失败') + ': ' + error.message);
+    }
 }
 
 /** 彻底停止任务（原「停止任务」行为） */
@@ -1518,18 +1547,6 @@ function handleStreamEvent(event, progressElement, progressId,
             break;
         }
             
-        case 'user_interrupt_continue': {
-            const d = event.data || {};
-            const reason = (d.reason != null && String(d.reason).trim() !== '') ? String(d.reason).trim() : (event.message || '');
-            const timelineTitle = typeof window.t === 'function' ? window.t('tasks.userInterruptTimelineTitle') : '用户中断说明（继续迭代）';
-            addTimelineItem(timeline, 'user_interrupt', {
-                title: '✋ ' + timelineTitle,
-                message: reason,
-                data: d,
-            });
-            break;
-        }
-
         case 'progress':
             const progressTitle = document.querySelector(`#${progressId} .progress-title`);
             if (progressTitle) {
@@ -2533,7 +2550,7 @@ function renderActiveTasks(tasks) {
             if (cancelBtn) {
                 cancelBtn.onclick = (evt) => {
                     evt.stopPropagation();
-                    cancelActiveTask(task.conversationId, cancelBtn);
+                    cancelActiveTask(task.conversationId);
                 };
                 if (task.status === 'cancelling') {
                     cancelBtn.disabled = true;
@@ -2546,21 +2563,12 @@ function renderActiveTasks(tasks) {
     });
 }
 
-async function cancelActiveTask(conversationId, button) {
-    if (!conversationId) return;
-    const originalText = button.textContent;
-    button.disabled = true;
-    button.textContent = typeof window.t === 'function' ? window.t('tasks.cancelling') : '取消中...';
-
-    try {
-        await requestCancel(conversationId);
-        loadActiveTasks();
-    } catch (error) {
-        console.error('取消任务失败:', error);
-        alert((typeof window.t === 'function' ? window.t('tasks.cancelTaskFailed') : '取消任务失败') + ': ' + error.message);
-        button.disabled = false;
-        button.textContent = originalText;
+function cancelActiveTask(conversationId) {
+    if (!conversationId) {
+        return;
     }
+    const progressId = findProgressIdByConversationId(conversationId);
+    openUserInterruptModal(progressId, conversationId);
 }
 
 let monitorPanelFetchSeq = 0;
