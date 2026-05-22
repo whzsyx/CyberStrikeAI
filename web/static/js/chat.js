@@ -574,7 +574,7 @@ function restoreChatReasoningControlsFromStorage() {
         }
         if (e) {
             const v = localStorage.getItem(REASONING_EFFORT_LS);
-            if (v !== null && ['', 'low', 'medium', 'high', 'max'].indexOf(v) !== -1) {
+            if (v !== null && ['', 'low', 'medium', 'high', 'max', 'xhigh'].indexOf(v) !== -1) {
                 e.value = v;
             }
         }
