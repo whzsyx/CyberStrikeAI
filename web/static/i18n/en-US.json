@@ -2546,6 +2546,15 @@
     "files": {
       "parent": "Parent",
       "refresh": "Refresh",
+      "upload": "Upload",
+      "uploading": "Uploading {{name}} · {{percent}}%",
+      "uploadOk": "Uploaded",
+      "uploadQueued": "Upload task queued",
+      "uploadPendingApproval": "Upload task pending HITL approval",
+      "uploadUnsupported": "Upload is not supported for this session",
+      "uploadCurlBeacon": "Curl beacons cannot upload files; use an HTTP Beacon",
+      "uploadTcpShell": "This is a TCP reverse shell (bash/nc): commands and download only. For upload, reconnect with: (1) a compiled CSB1 Beacon on the same listener, or (2) an HTTP/HTTPS Beacon.",
+      "uploadTcpReverse": "This is a TCP reverse shell (bash/nc): commands and download only. For upload, reconnect with: (1) a compiled CSB1 Beacon on the same listener, or (2) an HTTP/HTTPS Beacon.",
       "loading": "Loading…",
       "timeout": "Timed out loading files",
       "emptyDir": "Empty directory",
@@ -2555,6 +2564,7 @@
       "colActions": "Actions",
       "open": "Open",
       "download": "Download",
+      "downloadOk": "Downloaded",
       "failed": "Failed"
     },
     "listeners": {

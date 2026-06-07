@@ -33,8 +33,10 @@
         terminalBusy: false,
         terminalQueue: [],
         // 文件管理
-        currentPath: '/',
+        currentPath: '.',
+        implantPwd: null,
         fileList: [],
+        fileUploadBusy: false,
         // 任务轮询
         taskPollInterval: null,
     };
@@ -325,6 +327,7 @@
                 break;
             case 'c2-sessions':
                 C2.loadSessions();
+                C2.ensureListenersLoaded();
                 break;
             case 'c2-tasks':
                 C2.loadTasks();
@@ -344,6 +347,16 @@
     // ============================================================================
     // 监听器管理
     // ============================================================================
+
+    C2.ensureListenersLoaded = function() {
+        if (C2.listeners && C2.listeners.length > 0) {
+            return Promise.resolve(C2.listeners);
+        }
+        return apiRequest('GET', `${API_BASE}/listeners`).then(function(data) {
+            C2.listeners = (data && data.listeners) || [];
+            return C2.listeners;
+        });
+    };
 
     C2.loadListeners = function() {
         Promise.all([
@@ -778,6 +791,8 @@
 
     C2.selectSession = function(id) {
         C2.selectedSessionId = id;
+        C2.implantPwd = null;
+        C2.currentPath = '.';
         C2.renderSessions();
         C2.renderSessionDetail(id);
     };
@@ -822,9 +837,16 @@
                     </div>
                     <div id="c2-tab-files" class="c2-tab-panel" style="display:none;">
                         <div class="c2-file-toolbar">
-                            <button class="btn-ghost btn-sm" onclick="C2.loadFileList('..')">⬆ ${escapeHtml(c2t('c2.files.parent'))}</button>
+                            <button class="btn-ghost btn-sm" onclick="C2.goToParentDirectory()">⬆ ${escapeHtml(c2t('c2.files.parent'))}</button>
                             <button class="btn-ghost btn-sm" onclick="C2.refreshFiles()">${escapeHtml(c2t('c2.files.refresh'))}</button>
+                            <button type="button" class="btn-ghost btn-sm" id="c2-file-upload-btn" onclick="C2.openFileUploadPicker()" title="${escapeHtml(c2t('c2.files.upload'))}">📤 ${escapeHtml(c2t('c2.files.upload'))}</button>
+                            <input type="file" id="c2-file-upload-input" style="display:none" onchange="C2.onC2FileUploadPick(event)" />
                             <span id="c2-current-path" class="c2-path-breadcrumb">/</span>
+                        </div>
+                        <div id="c2-file-upload-hint" class="c2-file-upload-hint" hidden role="status"></div>
+                        <div id="c2-file-upload-progress" class="c2-file-upload-progress" hidden role="status" aria-live="polite">
+                            <div class="c2-file-upload-progress-track" aria-hidden="true"><div class="c2-file-upload-progress-fill" id="c2-file-upload-progress-fill"></div></div>
+                            <span class="c2-file-upload-progress-label" id="c2-file-upload-progress-label"></span>
                         </div>
                         <div id="c2-file-list" class="c2-file-list"></div>
                     </div>
@@ -869,6 +891,10 @@
             if (!isCurlBeacon) C2.initTerminal();
             C2.loadFileList(s.id, '.');
             C2.loadSessionTasks(s.id);
+            C2.updateFileUploadButton(s);
+            C2.ensureListenersLoaded().then(function() {
+                C2.updateFileUploadButton(s);
+            });
         }, 50);
     };
 
@@ -1420,10 +1446,183 @@
     // 文件管理
     // ============================================================================
 
+    C2.normalizeFilePath = function(path) {
+        var p = path == null ? '.' : String(path).trim();
+        if (!p || p === '/') return '.';
+        p = p.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/+$/, '');
+        return p || '.';
+    };
+
+    C2.joinFilePath = function(base, name) {
+        var b = C2.normalizeFilePath(base);
+        var n = String(name || '').trim().replace(/\\/g, '/').replace(/^\/+/, '');
+        if (!n) return b;
+        if (b === '.' || b === '/') return n;
+        return b + '/' + n;
+    };
+
+    /** 将相对浏览路径解析为 implant 工作目录下的绝对路径 */
+    C2.resolvePathAgainstPwd = function(pwd, rel) {
+        var base = String(pwd || '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
+        if (!base) base = '/';
+        if (!base.startsWith('/')) base = '/' + base;
+        var parts = String(rel || '.').replace(/\\/g, '/').split('/');
+        var stack = base === '/' ? [] : base.split('/').filter(Boolean);
+        for (var i = 0; i < parts.length; i++) {
+            var p = parts[i];
+            if (!p || p === '.') continue;
+            if (p === '..') {
+                if (stack.length) stack.pop();
+            } else {
+                stack.push(p);
+            }
+        }
+        return '/' + stack.join('/');
+    };
+
+    C2.resolveRemotePath = function(browsePath, filename) {
+        var joined = C2.joinFilePath(browsePath || '.', filename);
+        if (!C2.implantPwd) return joined;
+        return C2.resolvePathAgainstPwd(C2.implantPwd, joined);
+    };
+
+    C2.updateFileBreadcrumb = function(browsePath) {
+        var breadcrumb = document.getElementById('c2-current-path');
+        if (!breadcrumb) return;
+        var rel = C2.normalizeFilePath(browsePath || '.');
+        if (C2.implantPwd) {
+            breadcrumb.textContent = C2.resolvePathAgainstPwd(C2.implantPwd, rel);
+            breadcrumb.title = rel;
+        } else {
+            breadcrumb.textContent = rel;
+            breadcrumb.title = '';
+        }
+    };
+
+    C2.parseLsLine = function(line) {
+        var trimmed = String(line || '').trim();
+        if (!trimmed || /^total\s+\d+/i.test(trimmed)) return null;
+
+        // Beacon 结构化输出：type\tmode\tsize\tname
+        var beaconParts = trimmed.split('\t');
+        if (beaconParts.length >= 4) {
+            var bName = beaconParts.slice(3).join('\t').trim();
+            var bMode = beaconParts[1].trim();
+            var bType = beaconParts[0].trim();
+            if (bName && bName !== '.' && bName !== '..') {
+                return {
+                    mode: bMode || bType,
+                    size: beaconParts[2].trim(),
+                    name: bName,
+                    isDir: bType.charAt(0) === 'd' || bMode.charAt(0) === 'd'
+                };
+            }
+            return null;
+        }
+
+        // 原生 ls -l 输出
+        var m = trimmed.match(/^(\S+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(.+)$/);
+        if (!m) return null;
+        var name = m[9].trim();
+        var arrow = name.indexOf(' -> ');
+        if (arrow > 0) name = name.slice(0, arrow).trim();
+        if (!name || name === '.' || name === '..') return null;
+        return {
+            mode: m[1],
+            size: m[5],
+            name: name,
+            isDir: m[1].charAt(0) === 'd'
+        };
+    };
+
+    C2.isDownloadShellError = function(text) {
+        var lower = String(text || '').toLowerCase();
+        return lower.indexOf('c2_download_err:') >= 0 ||
+            lower.indexOf('no such file') >= 0 ||
+            lower.indexOf('permission denied') >= 0 ||
+            lower.indexOf('is a directory') >= 0 ||
+            lower.indexOf('cannot open') >= 0 ||
+            lower.indexOf('not a regular file') >= 0;
+    };
+
+    C2.refreshImplantPwd = function(sessionId, callback) {
+        if (!sessionId) {
+            if (callback) callback();
+            return;
+        }
+        apiRequest('POST', `${API_BASE}/tasks`, {
+            session_id: sessionId,
+            task_type: 'pwd',
+            payload: {}
+        }).then(function(data) {
+            if (data.error) {
+                if (callback) callback();
+                return;
+            }
+            var taskId = data.task && data.task.id ? data.task.id : data.task_id;
+            if (!taskId) {
+                if (callback) callback();
+                return;
+            }
+            C2.waitForImplantPwd(taskId, callback);
+        }).catch(function() {
+            if (callback) callback();
+        });
+    };
+
+    C2.waitForImplantPwd = function(taskId, callback) {
+        var attempts = 0;
+        var poll = function() {
+            if (++attempts > 30) {
+                if (callback) callback();
+                return;
+            }
+            apiRequest('GET', `${API_BASE}/tasks/${taskId}`).then(function(data) {
+                var task = data.task;
+                if (task && task.status === 'success' && task.resultText) {
+                    C2.implantPwd = String(task.resultText).trim().split('\n').pop().trim();
+                    C2.updateFileBreadcrumb(C2.currentPath);
+                    if (callback) callback();
+                } else if (task && task.status === 'failed') {
+                    if (callback) callback();
+                } else {
+                    setTimeout(poll, 300);
+                }
+            });
+        };
+        poll();
+    };
+
+    C2.getParentFilePath = function(path) {
+        var p = C2.normalizeFilePath(path);
+        if (p === '.' || p === '/') return '.';
+        var idx = p.lastIndexOf('/');
+        if (idx < 0) return '.';
+        var parent = p.slice(0, idx);
+        return parent || '.';
+    };
+
+    C2.goToParentDirectory = function() {
+        var parent = C2.getParentFilePath(C2.currentPath || '.');
+        C2.loadFileList(null, parent);
+    };
+
+    C2.openDirectory = function(name) {
+        var next = C2.joinFilePath(C2.currentPath || '.', name);
+        C2.loadFileList(null, next);
+    };
+
     C2.loadFileList = function(sessionId, path) {
+        // 兼容误传：仅传路径时（如旧版 loadFileList('..')）自动纠正
+        if (sessionId && path == null && typeof sessionId === 'string' &&
+            (sessionId === '..' || sessionId === '.' || sessionId.indexOf('/') >= 0)) {
+            path = sessionId;
+            sessionId = null;
+        }
         if (!sessionId) sessionId = C2.selectedSessionId;
         if (!sessionId) return;
         if (!path) path = C2.currentPath || '.';
+        path = C2.normalizeFilePath(path);
 
         const container = document.getElementById('c2-file-list');
         const breadcrumb = document.getElementById('c2-current-path');
@@ -1455,9 +1654,9 @@
                 const task = data.task;
                 if (task && task.status === 'success') {
                     C2.currentPath = path;
-                    const breadcrumb = document.getElementById('c2-current-path');
-                    if (breadcrumb) breadcrumb.textContent = path;
+                    C2.updateFileBreadcrumb(path);
                     C2.renderFileList(task.resultText || '');
+                    C2.refreshImplantPwd(sessionId);
                 } else if (task && task.status === 'failed') {
                     if (container) container.innerHTML = `<div class="c2-error">${escapeHtml(task.error || c2t('c2.files.failed'))}</div>`;
                 } else {
@@ -1472,8 +1671,10 @@
         const container = document.getElementById('c2-file-list');
         if (!container) return;
 
-        const lines = output.split('\n').filter(l => l.trim());
-        if (lines.length === 0) {
+        const entries = output.split('\n')
+            .map(C2.parseLsLine)
+            .filter(function(entry) { return entry != null; });
+        if (entries.length === 0) {
             container.innerHTML = '<div class="c2-empty">' + escapeHtml(c2t('c2.files.emptyDir')) + '</div>';
             return;
         }
@@ -1489,22 +1690,19 @@
                     </tr>
                 </thead>
                 <tbody>
-                    ${lines.map(line => {
-                        const parts = line.split(/\s+/);
-                        const name = parts[parts.length - 1] || line;
-                        const isDir = line.startsWith('d') || parts[0]?.startsWith?.('d');
+                    ${entries.map(function(entry) {
                         return `
                             <tr>
                                 <td class="c2-file-name">
-                                    <span class="c2-file-icon">${isDir ? '📁' : '📄'}</span>
-                                    ${escapeHtml(name)}
+                                    <span class="c2-file-icon">${entry.isDir ? '📁' : '📄'}</span>
+                                    ${escapeHtml(entry.name)}
                                 </td>
-                                <td>${parts[parts.length - 5] || '-'}</td>
-                                <td>${parts[parts.length - 4] || '-'}</td>
+                                <td>${escapeHtml(entry.size)}</td>
+                                <td>${escapeHtml(entry.mode)}</td>
                                 <td>
-                                    ${isDir 
-                                        ? `<button class="btn-ghost btn-sm" onclick="C2.loadFileList(null, '${escapeHtml(name)}')">${escapeHtml(c2t('c2.files.open'))}</button>`
-                                        : `<button class="btn-ghost btn-sm" onclick="C2.downloadFile('${escapeHtml(name)}')">${escapeHtml(c2t('c2.files.download'))}</button>`
+                                    ${entry.isDir
+                                        ? `<button class="btn-ghost btn-sm" onclick='C2.openDirectory(${JSON.stringify(entry.name)})'>${escapeHtml(c2t('c2.files.open'))}</button>`
+                                        : `<button class="btn-ghost btn-sm" onclick='C2.downloadFile(${JSON.stringify(entry.name)})'>${escapeHtml(c2t('c2.files.download'))}</button>`
                                     }
                                 </td>
                             </tr>
@@ -1519,17 +1717,297 @@
         C2.loadFileList(null, C2.currentPath);
     };
 
+    C2.sessionTransport = function(session) {
+        if (!session || !session.metadata) return '';
+        return String(session.metadata.transport || '').toLowerCase();
+    };
+
+    C2.sessionSupportsUpload = function(session) {
+        if (!session) {
+            return { supported: false, reasonKey: 'c2.files.uploadUnsupported' };
+        }
+        if (session.implantUuid && String(session.implantUuid).indexOf('curl_') === 0) {
+            return { supported: false, reasonKey: 'c2.files.uploadCurlBeacon' };
+        }
+        var transport = C2.sessionTransport(session);
+        // 编译 Beacon：HTTP/HTTPS/TCP(CSB1) 均走二进制/结构化协议，支持 upload
+        if (transport === 'tcp_beacon' || transport === 'http_beacon' || transport === 'https_beacon') {
+            return { supported: true, reasonKey: '' };
+        }
+        // 经典 TCP 反弹 Shell（bash/nc，metadata.transport=tcp_reverse）
+        if (transport === 'tcp_reverse' || (session.hostname && String(session.hostname).indexOf('tcp_') === 0)) {
+            return { supported: false, reasonKey: 'c2.files.uploadTcpShell' };
+        }
+        return { supported: true, reasonKey: '' };
+    };
+
+    C2.updateFileUploadButton = function(session) {
+        if (!session && C2.selectedSessionId) {
+            session = C2.sessions.find(function(s) { return s.id === C2.selectedSessionId; });
+        }
+        var btn = document.getElementById('c2-file-upload-btn');
+        if (!btn) return;
+        var cap = C2.sessionSupportsUpload(session);
+        btn.disabled = !cap.supported || !!C2.fileUploadBusy;
+        btn.title = cap.supported ? c2t('c2.files.upload') : c2t(cap.reasonKey);
+        if (!cap.supported) {
+            btn.classList.add('is-disabled');
+        } else {
+            btn.classList.remove('is-disabled');
+        }
+        var hint = document.getElementById('c2-file-upload-hint');
+        if (hint) {
+            if (!cap.supported) {
+                hint.hidden = false;
+                hint.textContent = c2t(cap.reasonKey);
+            } else {
+                hint.hidden = true;
+                hint.textContent = '';
+            }
+        }
+    };
+
+    C2.setFileUploadProgress = function(visible, percent, filename) {
+        var row = document.getElementById('c2-file-upload-progress');
+        if (!row) return;
+        if (!visible) {
+            row.hidden = true;
+            return;
+        }
+        row.hidden = false;
+        var fill = document.getElementById('c2-file-upload-progress-fill');
+        var label = document.getElementById('c2-file-upload-progress-label');
+        if (fill) fill.style.width = Math.max(0, Math.min(100, percent || 0)) + '%';
+        if (label) {
+            label.textContent = c2t('c2.files.uploading', { name: filename || '', percent: percent || 0 });
+        }
+    };
+
+    C2.openFileUploadPicker = function() {
+        if (!C2.selectedSessionId || C2.fileUploadBusy) return;
+        var session = C2.sessions.find(function(s) { return s.id === C2.selectedSessionId; });
+        var cap = C2.sessionSupportsUpload(session);
+        if (!cap.supported) {
+            showToast(c2t(cap.reasonKey), 'warn');
+            return;
+        }
+        var inp = document.getElementById('c2-file-upload-input');
+        if (inp) inp.click();
+    };
+
+    C2.onC2FileUploadPick = function(ev) {
+        var input = ev && ev.target;
+        var file = input && input.files && input.files[0];
+        if (!file) return;
+        if (input) input.value = '';
+        C2.uploadFileToImplant(file);
+    };
+
+    C2.uploadFileToImplant = function(file) {
+        if (!C2.selectedSessionId || C2.fileUploadBusy || !file) return;
+        var sessionId = C2.selectedSessionId;
+        var remotePath = C2.resolveRemotePath(C2.currentPath || '.', file.name);
+        var uploadUrl = API_BASE + '/files/upload';
+
+        C2.fileUploadBusy = true;
+        C2.updateFileUploadButton();
+        C2.setFileUploadProgress(true, 0, file.name);
+
+        var form = new FormData();
+        form.append('session_id', sessionId);
+        form.append('remote_path', remotePath);
+        form.append('file', file);
+
+        var uploadPromise;
+        if (typeof apiUploadWithProgress === 'function') {
+            uploadPromise = apiUploadWithProgress(uploadUrl, form, {
+                onProgress: function(p) {
+                    C2.setFileUploadProgress(true, Math.min(p.percent || 0, 50), file.name);
+                }
+            });
+        } else if (typeof apiFetch === 'function') {
+            uploadPromise = apiFetch(uploadUrl, { method: 'POST', body: form });
+        } else {
+            uploadPromise = fetch(uploadUrl, { method: 'POST', body: form });
+        }
+
+        uploadPromise.then(function(res) {
+            if (!res.ok) {
+                return res.text().then(function(text) {
+                    throw new Error(text || c2t('c2.files.failed'));
+                });
+            }
+            return res.json();
+        }).then(function(uploadData) {
+            var fileId = uploadData && uploadData.file_id;
+            if (!fileId) throw new Error(c2t('c2.files.failed'));
+            C2.setFileUploadProgress(true, 55, file.name);
+            return apiRequest('POST', API_BASE + '/tasks', {
+                session_id: sessionId,
+                task_type: 'upload',
+                payload: { remote_path: remotePath, file_id: fileId }
+            });
+        }).then(function(taskData) {
+            if (taskData && taskData.error) throw new Error(taskData.error);
+            var taskId = taskData.task && taskData.task.id ? taskData.task.id : taskData.task_id;
+            if (!taskId) {
+                showToast(c2t('c2.files.uploadQueued'), 'success');
+                C2.fileUploadBusy = false;
+                C2.setFileUploadProgress(false);
+                C2.updateFileUploadButton();
+                return;
+            }
+            if (taskData.task && taskData.task.approvalStatus === 'pending') {
+                showToast(c2t('c2.files.uploadPendingApproval'), 'info');
+            }
+            C2.waitForFileUpload(taskId, file.name);
+        }).catch(function(err) {
+            showToast((err && err.message) || c2t('c2.files.failed'), 'error');
+            C2.fileUploadBusy = false;
+            C2.setFileUploadProgress(false);
+            C2.updateFileUploadButton();
+        });
+    };
+
+    C2.waitForFileUpload = function(taskId, filename) {
+        var attempts = 0;
+        var check = function() {
+            if (++attempts > 120) {
+                showToast(c2t('c2.files.timeout'), 'error');
+                C2.fileUploadBusy = false;
+                C2.setFileUploadProgress(false);
+                C2.updateFileUploadButton();
+                return;
+            }
+            apiRequest('GET', API_BASE + '/tasks/' + taskId).then(function(data) {
+                var task = data.task;
+                if (task && task.approvalStatus === 'pending' && task.status === 'queued') {
+                    C2.setFileUploadProgress(true, 60, filename);
+                    setTimeout(check, 1000);
+                    return;
+                }
+                if (task && task.status === 'success') {
+                    C2.setFileUploadProgress(true, 100, filename);
+                    showToast(c2t('c2.files.uploadOk'), 'success');
+                    C2.fileUploadBusy = false;
+                    setTimeout(function() { C2.setFileUploadProgress(false); }, 400);
+                    C2.updateFileUploadButton();
+                    C2.refreshFiles();
+                } else if (task && task.status === 'failed') {
+                    showToast(task.error || task.resultText || c2t('c2.files.failed'), 'error');
+                    C2.fileUploadBusy = false;
+                    C2.setFileUploadProgress(false);
+                    C2.updateFileUploadButton();
+                } else {
+                    var pct = 60 + Math.min(35, Math.floor(attempts / 3));
+                    C2.setFileUploadProgress(true, pct, filename);
+                    setTimeout(check, 500);
+                }
+            }).catch(function() {
+                C2.fileUploadBusy = false;
+                C2.setFileUploadProgress(false);
+                C2.updateFileUploadButton();
+            });
+        };
+        check();
+    };
+
+    C2.saveDownloadBlob = function(blob, filename) {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(a.href);
+    };
+
+    C2.saveDownloadContent = function(content, filename) {
+        const text = String(content || '');
+        if (C2.isDownloadShellError(text)) {
+            throw new Error(text.trim() || c2t('c2.files.failed'));
+        }
+        const b64 = text.replace(/\s/g, '');
+        let bytes;
+        try {
+            if (/^[A-Za-z0-9+/=]+$/.test(b64) && b64.length > 0) {
+                const binary = atob(b64);
+                bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+            } else {
+                bytes = new TextEncoder().encode(text);
+            }
+        } catch (e) {
+            bytes = new TextEncoder().encode(text);
+        }
+        C2.saveDownloadBlob(new Blob([bytes], { type: 'application/octet-stream' }), filename);
+    };
+
+    C2.fetchTaskResultFile = function(taskId, filename) {
+        const url = `${API_BASE}/tasks/${taskId}/result-file`;
+        const fetchFn = (typeof apiFetch === 'function') ? apiFetch : fetch;
+        fetchFn(url).then(resp => {
+            if (!resp.ok) throw new Error('download failed: ' + resp.status);
+            return resp.blob();
+        }).then(blob => {
+            C2.saveDownloadBlob(blob, filename);
+        }).catch(err => {
+            showToast((err && err.message) || c2t('c2.files.failed'), 'error');
+        });
+    };
+
+    C2.waitForFileDownload = function(taskId, filename) {
+        let attempts = 0;
+        const check = () => {
+            if (++attempts > 120) {
+                showToast(c2t('c2.files.timeout'), 'error');
+                return;
+            }
+            apiRequest('GET', `${API_BASE}/tasks/${taskId}`).then(data => {
+                const task = data.task;
+                if (task && task.status === 'success') {
+                    if (task.resultBlobPath) {
+                        C2.fetchTaskResultFile(taskId, filename);
+                    } else if (task.resultText != null) {
+                        try {
+                            C2.saveDownloadContent(task.resultText, filename);
+                            showToast(c2t('c2.files.downloadOk'), 'success');
+                        } catch (err) {
+                            showToast((err && err.message) || c2t('c2.files.failed'), 'error');
+                        }
+                    } else {
+                        C2.saveDownloadBlob(new Blob([], { type: 'application/octet-stream' }), filename);
+                        showToast(c2t('c2.files.downloadOk'), 'success');
+                    }
+                } else if (task && task.status === 'failed') {
+                    showToast(task.error || task.resultText || c2t('c2.files.failed'), 'error');
+                } else {
+                    setTimeout(check, 500);
+                }
+            });
+        };
+        check();
+    };
+
     C2.downloadFile = function(filename) {
         if (!C2.selectedSessionId) return;
-        const remotePath = C2.currentPath === '/' ? '/' + filename : C2.currentPath + '/' + filename;
-        
+        const remotePath = C2.resolveRemotePath(C2.currentPath || '.', filename);
+
         apiRequest('POST', `${API_BASE}/tasks`, {
             session_id: C2.selectedSessionId,
             task_type: 'download',
             payload: { remote_path: remotePath }
         }).then(data => {
-            if (data.error) showToast(data.error, 'error');
-            else showToast(c2t('c2.payloads.toastDownloadQueued'), 'success');
+            if (data.error) {
+                showToast(data.error, 'error');
+                return;
+            }
+            const taskId = data.task?.id || data.task_id;
+            if (!taskId) {
+                showToast(c2t('c2.payloads.toastDownloadQueued'), 'success');
+                return;
+            }
+            C2.waitForFileDownload(taskId, filename);
         });
     };
 

@@ -2535,6 +2535,15 @@
     "files": {
       "parent": "上级目录",
       "refresh": "刷新",
+      "upload": "上传",
+      "uploading": "正在上传 {{name}} · {{percent}}%",
+      "uploadOk": "上传成功",
+      "uploadQueued": "上传任务已入队",
+      "uploadPendingApproval": "上传任务待人机协同审批",
+      "uploadUnsupported": "当前会话不支持上传",
+      "uploadCurlBeacon": "Curl 轻量信标不支持文件上传，请使用 HTTP Beacon",
+      "uploadTcpShell": "当前为 TCP 反弹 Shell（bash/nc），仅支持命令与下载。上传请改用：① 同一监听器下编译 CSB1 Beacon，或 ② HTTP/HTTPS Beacon 重新上线。",
+      "uploadTcpReverse": "当前为 TCP 反弹 Shell（bash/nc），仅支持命令与下载。上传请改用：① 同一监听器下编译 CSB1 Beacon，或 ② HTTP/HTTPS Beacon 重新上线。",
       "loading": "加载中…",
       "timeout": "加载文件超时",
       "emptyDir": "空目录",
@@ -2544,6 +2553,7 @@
       "colActions": "操作",
       "open": "打开",
       "download": "下载",
+      "downloadOk": "下载成功",
       "failed": "失败"
     },
     "listeners": {
