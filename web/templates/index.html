@@ -8,7 +8,7 @@
     <link rel="shortcut icon" type="image/png" href="/static/favicon.ico">
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="stylesheet" href="/static/css/c2.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@4.19.0/css/xterm.css">
+    <link rel="stylesheet" href="/static/vendor/xterm.css">
     <script src="/static/js/router.js"></script>
 </head>
 <body>
@@ -3484,16 +3484,16 @@
         </div>
     </div>
 
-    <!-- Marked.js + DOMPurify：本地 vendor，避免 CDN 不可用导致 Markdown 降级为纯文本 -->
+    <!-- Marked.js + DOMPurify + 其他前端依赖：本地 vendor，内网/离线部署不依赖 CDN -->
     <script src="/static/vendor/marked.min.js"></script>
     <script src="/static/vendor/purify.min.js"></script>
     <script src="/static/js/sanitize-markdown.js"></script>
     <!-- Cytoscape.js for attack chain visualization -->
-    <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.27.0/dist/cytoscape.min.js"></script>
+    <script src="/static/vendor/cytoscape.min.js"></script>
     <!-- ELK.js for high-quality DAG layout (reduces edge crossings) -->
-    <script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.2/lib/elk.bundled.js"></script>
+    <script src="/static/vendor/elk.bundled.js"></script>
     <!-- SheetJS for XLSX export (info-collect) -->
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="/static/vendor/xlsx.full.min.js"></script>
     <script>
         // 确保ELK对象全局可用
         if (typeof ELK === 'undefined' && typeof elk !== 'undefined') {
@@ -4287,7 +4287,7 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/i18next@23.11.5/i18next.min.js"></script>
+    <script src="/static/vendor/i18next.min.js"></script>
     <script src="/static/js/i18n.js"></script>
     <script src="/static/js/builtin-tools.js"></script>
     <script src="/static/js/auth.js"></script>
@@ -4303,8 +4303,8 @@
     <script src="/static/js/settings.js"></script>
     <script src="/static/js/audit.js"></script>
     <script src="/static/js/wechat-robot.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xterm@4.19.0/lib/xterm.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.5.0/lib/xterm-addon-fit.js"></script>
+    <script src="/static/vendor/xterm.js"></script>
+    <script src="/static/vendor/xterm-addon-fit.js"></script>
     <script src="/static/js/terminal.js"></script>
     <script src="/static/js/knowledge.js"></script>
     <script src="/static/js/skills.js"></script>
