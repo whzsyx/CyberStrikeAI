@@ -2188,6 +2188,93 @@
     "exportDone": "Export complete",
     "loading": "Loading...",
     "empty": "No audit records",
+    "result": {
+      "success": "success",
+      "failure": "failure"
+    },
+    "msg": {
+      "auth": {
+        "login": "Login successful",
+        "login_failed": "Login failed: incorrect password",
+        "logout": "Logged out",
+        "change_password": "Login password changed",
+        "change_password_failed": "Password change failed: current password incorrect"
+      },
+      "config": {
+        "apply": "Configuration applied",
+        "update": "In-memory configuration updated",
+        "apply_fail_kb_init": "Failed to apply config: knowledge base init",
+        "apply_fail_kb_reinit": "Failed to apply config: knowledge base re-init",
+        "apply_fail_c2": "Failed to apply config: C2"
+      },
+      "conversation": {
+        "create": "Conversation created",
+        "delete": "Conversation deleted",
+        "delete_turn": "Conversation turn deleted"
+      },
+      "c2": {
+        "listener_create": "C2 listener created",
+        "listener_delete": "C2 listener deleted",
+        "listener_start": "C2 listener started",
+        "listener_stop": "C2 listener stopped",
+        "session_delete": "C2 session deleted",
+        "task_create": "C2 task created",
+        "task_cancel": "C2 task cancelled",
+        "task_delete": "C2 tasks deleted (batch)"
+      },
+      "webshell": {
+        "connection_create": "WebShell connection created",
+        "connection_delete": "WebShell connection deleted"
+      },
+      "knowledge": {
+        "item_delete": "Knowledge item deleted",
+        "index_rebuild": "Knowledge index rebuilt"
+      },
+      "vulnerability": {
+        "create": "Vulnerability record created",
+        "update": "Vulnerability record updated",
+        "delete": "Vulnerability record deleted",
+        "delete_batch": "Vulnerability records deleted (batch)"
+      },
+      "external_mcp": {
+        "upsert": "External MCP configuration updated",
+        "delete": "External MCP configuration deleted"
+      },
+      "task": {
+        "create_queue": "Batch task queue created",
+        "start_queue": "Batch task queue started",
+        "delete_queue": "Batch task queue deleted",
+        "pause_queue": "Batch task queue paused",
+        "rerun_queue": "Batch task queue rerun",
+        "delete_batch_task": "Batch subtask deleted"
+      },
+      "tool": {
+        "execution_delete": "Tool execution record deleted",
+        "execution_delete_batch": "Tool execution records deleted (batch)"
+      },
+      "file": {
+        "upload": "Chat attachment uploaded",
+        "delete": "Chat attachment deleted"
+      },
+      "hitl": {
+        "decision": "HITL approval decision"
+      },
+      "role": {
+        "create": "Role created",
+        "update": "Role updated",
+        "delete": "Role deleted"
+      },
+      "skill": {
+        "create": "Skill created",
+        "update": "Skill updated",
+        "delete": "Skill deleted"
+      },
+      "agent": {
+        "markdown_create": "Markdown sub-agent created",
+        "markdown_update": "Markdown sub-agent updated",
+        "markdown_delete": "Markdown sub-agent deleted"
+      }
+    },
     "paginationShow": "{{start}}-{{end}} of {{total}}",
     "detailTitle": "Audit detail",
     "detailTime": "Time",

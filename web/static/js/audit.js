@@ -4,6 +4,7 @@
 let auditLogsPage = 1;
 let auditLogsPageSize = 20;
 let auditLogsTotal = 0;
+let auditLogsCache = [];
 
 const AUDIT_PAGE_SIZE_KEY = 'cyberstrike_audit_page_size';
 
@@ -50,6 +51,43 @@ function auditCategoryLabel(category) {
 function auditActionLabel(action) {
     if (!action) return '';
     return auditT('settingsAudit.act.' + action, null, action);
+}
+
+/** Stored DB messages that share category+action but need distinct i18n keys. */
+const AUDIT_MSG_BY_STORED_TEXT = {
+    '登录失败：密码错误': 'settingsAudit.msg.auth.login_failed',
+    '修改密码失败：当前密码不正确': 'settingsAudit.msg.auth.change_password_failed',
+    '应用配置失败：初始化知识库': 'settingsAudit.msg.config.apply_fail_kb_init',
+    '应用配置失败：重新初始化知识库': 'settingsAudit.msg.config.apply_fail_kb_reinit',
+    '应用配置失败：C2': 'settingsAudit.msg.config.apply_fail_c2'
+};
+
+function auditMessageLabel(log) {
+    if (!log) return '';
+    const raw = (log.message || '').trim();
+    if (raw && AUDIT_MSG_BY_STORED_TEXT[raw]) {
+        return auditT(AUDIT_MSG_BY_STORED_TEXT[raw], null, raw);
+    }
+    const cat = (log.category || '').trim();
+    const act = (log.action || '').trim();
+    const res = (log.result || '').trim();
+    if (cat && act) {
+        if (cat === 'auth' && act === 'login' && res === 'failure') {
+            return auditT('settingsAudit.msg.auth.login_failed', null, raw);
+        }
+        if (cat === 'auth' && act === 'change_password' && res === 'failure') {
+            return auditT('settingsAudit.msg.auth.change_password_failed', null, raw);
+        }
+        const key = 'settingsAudit.msg.' + cat + '.' + act;
+        const translated = auditT(key, null, null);
+        if (translated && translated !== key) return translated;
+    }
+    return raw;
+}
+
+function auditResultLabel(result) {
+    if (!result) return '';
+    return auditT('settingsAudit.result.' + result, null, result);
 }
 
 function auditLocale() {
@@ -246,7 +284,8 @@ async function loadAuditLogs(page) {
             throw new Error(err.error || r.statusText);
         }
         const data = await r.json();
-        renderAuditLogs(data.logs || []);
+        auditLogsCache = data.logs || [];
+        renderAuditLogs(auditLogsCache);
         auditLogsTotal = typeof data.total === 'number' ? data.total : 0;
         const maxPage = Math.max(1, Math.ceil(auditLogsTotal / auditLogsPageSize));
         if (auditLogsPage > maxPage) {
@@ -295,10 +334,10 @@ function renderAuditLogs(logs) {
     const rows = logs.map(function (log) {
         const catLabel = esc(auditCategoryLabel(log.category || ''));
         const actionLabel = esc(auditActionLabel(log.action || ''));
-        const msg = esc(log.message || '');
+        const msg = esc(auditMessageLabel(log));
         const ip = esc(log.clientIp || '');
         const when = esc(formatAuditTime(log.createdAt));
-        const res = esc(log.result || '');
+        const res = esc(auditResultLabel(log.result || ''));
         const rid = log.resourceId ? esc(log.resourceId) : '';
         const eid = esc(log.id || '');
         const resultCls = auditResultTagClass(log.result || '');
@@ -658,8 +697,8 @@ async function showAuditLogDetail(id) {
                 '<div class="modal-body audit-detail-body">' +
                 '<p><strong>' + esc(auditT('settingsAudit.detailTime', null, '时间')) + ':</strong> ' + esc(formatAuditTime(log.createdAt)) + '</p>' +
                 '<p><strong>' + esc(auditT('settingsAudit.detailCategory', null, '类别')) + ':</strong> ' + catAction + '</p>' +
-                '<p><strong>' + esc(auditT('settingsAudit.detailResult', null, '结果')) + ':</strong> ' + esc(log.result || '') + '</p>' +
-                '<p><strong>' + esc(auditT('settingsAudit.detailMessage', null, '说明')) + ':</strong> ' + esc(log.message || '') + '</p>' +
+                '<p><strong>' + esc(auditT('settingsAudit.detailResult', null, '结果')) + ':</strong> ' + esc(auditResultLabel(log.result || '')) + '</p>' +
+                '<p><strong>' + esc(auditT('settingsAudit.detailMessage', null, '说明')) + ':</strong> ' + esc(auditMessageLabel(log)) + '</p>' +
                 (log.clientIp ? '<p><strong>IP:</strong> ' + esc(log.clientIp) + '</p>' : '') +
                 (log.sessionHint ? '<p><strong>' + esc(auditT('settingsAudit.detailSession', null, '会话')) + ':</strong> ' + esc(log.sessionHint) + '</p>' : '') +
                 (log.userAgent ? '<p><strong>UA:</strong> ' + esc(log.userAgent) + '</p>' : '') +
@@ -699,6 +738,35 @@ function initAuditLogsSection() {
     updateAuditTimezoneHint();
     loadAuditLogs(1);
 }
+
+function refreshAuditFilterI18n() {
+    const section = document.getElementById('settings-section-audit');
+    if (section && typeof applyTranslations === 'function') {
+        applyTranslations(section);
+    }
+    rebuildAuditActionSelect();
+    syncAuditCustomSelect('audit-filter-category');
+    syncAuditCustomSelect('audit-filter-action');
+    syncAuditCustomSelect('audit-filter-result');
+    updateAuditTimezoneHint();
+}
+
+function refreshAuditLogsI18n() {
+    if (!document.getElementById('audit-log-list')) return;
+    refreshAuditFilterI18n();
+    if (auditLogsCache.length) {
+        renderAuditLogs(auditLogsCache);
+        renderAuditLogsPagination();
+    }
+}
+
+document.addEventListener('languagechange', function () {
+    try {
+        refreshAuditLogsI18n();
+    } catch (e) {
+        console.warn('languagechange audit refresh failed', e);
+    }
+});
 
 var auditCustomSelectMap = {};
 var auditFilterSelectsDocListener = false;

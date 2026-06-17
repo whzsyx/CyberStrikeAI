@@ -2176,6 +2176,93 @@
     "exportDone": "导出完成",
     "loading": "加载中...",
     "empty": "暂无审计记录",
+    "result": {
+      "success": "成功",
+      "failure": "失败"
+    },
+    "msg": {
+      "auth": {
+        "login": "登录成功",
+        "login_failed": "登录失败：密码错误",
+        "logout": "退出登录",
+        "change_password": "登录密码已修改",
+        "change_password_failed": "修改密码失败：当前密码不正确"
+      },
+      "config": {
+        "apply": "配置已应用",
+        "update": "更新内存配置",
+        "apply_fail_kb_init": "应用配置失败：初始化知识库",
+        "apply_fail_kb_reinit": "应用配置失败：重新初始化知识库",
+        "apply_fail_c2": "应用配置失败：C2"
+      },
+      "conversation": {
+        "create": "创建对话",
+        "delete": "删除对话",
+        "delete_turn": "删除对话轮次"
+      },
+      "c2": {
+        "listener_create": "创建 C2 监听器",
+        "listener_delete": "删除 C2 监听器",
+        "listener_start": "启动 C2 监听器",
+        "listener_stop": "停止 C2 监听器",
+        "session_delete": "删除 C2 会话",
+        "task_create": "创建 C2 任务",
+        "task_cancel": "取消 C2 任务",
+        "task_delete": "批量删除 C2 任务"
+      },
+      "webshell": {
+        "connection_create": "创建 WebShell 连接",
+        "connection_delete": "删除 WebShell 连接"
+      },
+      "knowledge": {
+        "item_delete": "删除知识项",
+        "index_rebuild": "重建知识库索引"
+      },
+      "vulnerability": {
+        "create": "创建漏洞记录",
+        "update": "更新漏洞记录",
+        "delete": "删除漏洞记录",
+        "delete_batch": "批量删除漏洞记录"
+      },
+      "external_mcp": {
+        "upsert": "更新外部 MCP 配置",
+        "delete": "删除外部 MCP 配置"
+      },
+      "task": {
+        "create_queue": "创建批量任务队列",
+        "start_queue": "启动批量任务队列",
+        "delete_queue": "删除批量任务队列",
+        "pause_queue": "暂停批量任务队列",
+        "rerun_queue": "重跑批量任务队列",
+        "delete_batch_task": "删除批量子任务"
+      },
+      "tool": {
+        "execution_delete": "删除工具执行记录",
+        "execution_delete_batch": "批量删除工具执行记录"
+      },
+      "file": {
+        "upload": "上传对话附件",
+        "delete": "删除对话附件"
+      },
+      "hitl": {
+        "decision": "HITL 审批决策"
+      },
+      "role": {
+        "create": "创建角色",
+        "update": "更新角色",
+        "delete": "删除角色"
+      },
+      "skill": {
+        "create": "创建 Skill",
+        "update": "更新 Skill",
+        "delete": "删除 Skill"
+      },
+      "agent": {
+        "markdown_create": "创建 Markdown 子代理",
+        "markdown_update": "更新 Markdown 子代理",
+        "markdown_delete": "删除 Markdown 子代理"
+      }
+    },
     "paginationShow": "显示 {{start}}-{{end}} / 共 {{total}} 条",
     "detailTitle": "审计详情",
     "detailTime": "时间",
