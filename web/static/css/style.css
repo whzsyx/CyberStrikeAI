@@ -24536,17 +24536,30 @@ button.chat-files-dropdown-item:hover:not(:disabled) {
     flex-direction: column;
     overflow: hidden;
     min-height: 0;
-    padding-bottom: 16px;
+    padding-bottom: 0;
 }
 #project-panel-graph .projects-graph-toolbar {
     flex: 0 0 auto;
 }
 #project-panel-graph .project-fact-graph-layout {
-    flex: 1 1 auto;
+    flex: 1 1 0;
     min-height: 0;
+    max-height: 100%;
+    overflow: hidden;
+}
+#project-panel-graph .project-fact-graph-container {
+    min-height: 0;
+    height: 100%;
 }
 #project-panel-graph .project-fact-graph-footer {
     flex: 0 0 auto;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 20;
+    margin: 0;
+    padding: 10px 0 12px;
+    background: #fff;
+    border-top: 1px solid #eef2f7;
 }
 .projects-graph-toolbar-row {
     align-items: flex-end;
@@ -24607,7 +24620,27 @@ button.chat-files-dropdown-item:hover:not(:disabled) {
     flex-wrap: wrap;
     align-items: center;
     justify-content: flex-end;
-    gap: 6px 12px;
+    gap: 8px 14px;
+}
+.projects-graph-legend-group {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+}
+.projects-graph-legend-heading {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #94a3b8;
+}
+.projects-graph-legend-divider {
+    display: inline-block;
+    width: 1px;
+    height: 18px;
+    background: #e2e8f0;
+    flex: 0 0 auto;
 }
 .projects-graph-legend-item {
     display: inline-flex;
@@ -24616,27 +24649,40 @@ button.chat-files-dropdown-item:hover:not(:disabled) {
     font-size: 0.75rem;
     color: #64748b;
 }
-.projects-graph-legend-item i {
+.projects-graph-legend-item--edge i {
     display: inline-block;
     width: 22px;
     height: 0;
     border-top: 2.5px solid var(--legend-color, #cbd5e1);
     border-radius: 2px;
 }
-.projects-graph-legend-item--dashed i {
+.projects-graph-legend-item--edge.projects-graph-legend-item--dashed i {
     border-top-style: dashed;
     opacity: 0.7;
+}
+.projects-graph-legend-item--node i {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 1.5px solid var(--legend-color, #cbd5e1);
+    border-radius: 4px;
+    background: linear-gradient(135deg, #ffffff 0%, var(--legend-bg, #f8fafc) 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+.projects-graph-legend-item--node-dashed i {
+    border-style: dashed;
+    opacity: 0.85;
 }
 .project-fact-graph-layout {
     position: relative;
     display: flex;
-    min-height: 480px;
+    min-height: 0;
     align-items: stretch;
 }
 .project-fact-graph-container {
     flex: 1 1 auto;
     width: 100%;
-    min-height: 480px;
+    min-height: 240px;
     border: 1px solid var(--border-color, #e2e8f0);
     border-radius: 14px;
     background-color: #f8fafc;
@@ -24781,8 +24827,8 @@ button.chat-files-dropdown-item:hover:not(:disabled) {
     border: 1px solid #e2e8f0;
 }
 .project-fact-graph-node-category--target { color: #4338ca; background: #eef2ff; border-color: #c7d2fe; }
-.project-fact-graph-node-category--finding,
-.project-fact-graph-node-category--vulnerability { color: #be123c; background: #fff1f2; border-color: #fecdd3; }
+.project-fact-graph-node-category--finding { color: #be123c; background: #fff1f2; border-color: #fecdd3; }
+.project-fact-graph-node-category--vulnerability { color: #7e22ce; background: #f5f3ff; border-color: #ddd6fe; }
 .project-fact-graph-node-category--exploit,
 .project-fact-graph-node-category--poc { color: #c2410c; background: #ffedd5; border-color: #fdba74; }
 .project-fact-graph-node-category--chain { color: #6d28d9; background: #f5f3ff; border-color: #ddd6fe; }
@@ -24830,6 +24876,13 @@ button.chat-files-dropdown-item:hover:not(:disabled) {
     width: 100%;
     min-width: 0;
     color: #475569;
+}
+.project-fact-graph-node-vuln-hint {
+    display: block;
+    width: 100%;
+    font-size: 0.75rem;
+    line-height: 1.45;
+    color: #64748b;
 }
 .project-fact-graph-edges-wrap {
     flex: 1 1 auto;
@@ -24991,6 +25044,7 @@ button.chat-files-dropdown-item:hover:not(:disabled) {
     gap: 8px 12px;
     margin: 10px 0 0;
     flex: 0 0 auto;
+    flex-shrink: 0;
 }
 .project-fact-graph-stats {
     display: flex;

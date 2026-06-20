@@ -920,20 +920,31 @@ function renderProjectFactGraphEdges(factKey, graphData, selectedEdgeId) {
     if (!edges.length) wrap.hidden = false;
 }
 
+function graphVulnIdFromKey(factKey) {
+    const key = String(factKey || '');
+    if (!key.startsWith('vuln:')) return null;
+    return key.slice(5);
+}
+
 function showProjectFactGraphNode(factKey, graphData, selectedEdgeId) {
-    if (!factKey || String(factKey).startsWith('vuln:')) {
+    if (!factKey) {
         closeProjectFactGraphSidebar();
         return;
     }
     _selectedGraphFactKey = factKey;
     _selectedGraphEdgeId = selectedEdgeId || null;
     const node = (graphData?.nodes || []).find((n) => n.fact_key === factKey || n.id === factKey);
+    const vulnId = graphVulnIdFromKey(factKey);
+    const isVulnNode = !!vulnId;
     const sidebar = document.getElementById('project-fact-graph-sidebar');
     const titleEl = document.getElementById('project-fact-graph-node-title');
     const metaEl = document.getElementById('project-fact-graph-node-meta');
     const categoryEl = document.getElementById('project-fact-graph-node-category');
+    const detailBtn = document.getElementById('project-fact-graph-detail-btn');
+    const editBtn = document.getElementById('project-fact-graph-edit-btn');
     if (!sidebar || !titleEl || !metaEl) return;
-    titleEl.textContent = factKey;
+    titleEl.textContent = isVulnNode ? vulnId : factKey;
+    titleEl.title = isVulnNode ? vulnId : factKey;
     if (categoryEl) {
         const visualType =
             typeof ProjectFactGraph !== 'undefined' && ProjectFactGraph.resolveGraphNodeType
@@ -950,10 +961,15 @@ function showProjectFactGraphNode(factKey, graphData, selectedEdgeId) {
     }
     const conf = node?.confidence || '';
     const summary = (node?.summary || node?.label || '').trim();
-    if (summary || conf) {
+    if (summary || conf || isVulnNode) {
         const parts = [];
         if (summary) {
             parts.push(`<span class="project-fact-graph-node-summary">${escapeHtml(summary)}</span>`);
+        }
+        if (isVulnNode) {
+            parts.push(
+                `<span class="project-fact-graph-node-vuln-hint">${escapeHtml(tp('projects.graphVulnSidebarHint'))}</span>`,
+            );
         }
         if (conf) {
             parts.push(formatConfidenceBadge(conf));
@@ -961,6 +977,12 @@ function showProjectFactGraphNode(factKey, graphData, selectedEdgeId) {
         metaEl.innerHTML = parts.join('');
     } else {
         metaEl.textContent = '';
+    }
+    if (detailBtn) {
+        detailBtn.textContent = isVulnNode ? tp('projects.viewVulnerability') : tp('projects.details');
+    }
+    if (editBtn) {
+        editBtn.hidden = isVulnNode;
     }
     renderProjectFactGraphEdges(factKey, graphData, _selectedGraphEdgeId);
     if (_selectedGraphEdgeId && typeof ProjectFactGraph !== 'undefined') {
@@ -1003,7 +1025,13 @@ async function deleteProjectFactEdge(edgeId) {
 }
 
 function openSelectedGraphFactDetail() {
-    if (_selectedGraphFactKey) viewProjectFactBody(_selectedGraphFactKey);
+    if (!_selectedGraphFactKey) return;
+    const vulnId = graphVulnIdFromKey(_selectedGraphFactKey);
+    if (vulnId) {
+        openVulnerabilityDetail(vulnId);
+        return;
+    }
+    viewProjectFactBody(_selectedGraphFactKey);
 }
 
 function editSelectedGraphFact() {

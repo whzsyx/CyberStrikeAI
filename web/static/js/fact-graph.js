@@ -9,6 +9,7 @@
     let _graphData = null;
     let _onNodeSelect = null;
     let _onEdgeSelect = null;
+    let _resizeObs = null;
 
     const EDGE_COLORS = {
         discovered_on: '#4F46E5',
@@ -30,25 +31,29 @@
     const CARD_MIN_W = 300;
     const CARD_TARGET_W = 360;
     const CARD_MIN_H = 88;
-    const CARD_MAX_H = 152;
+    const CARD_MAX_H = 176;
     const CARD_HEADER_FS = 11;
     const CARD_HEADER_LH = 16;
+    const CARD_KEY_FS = 10;
+    const CARD_KEY_LH = 14;
     const CARD_SUMMARY_FS = 13;
     const CARD_SUMMARY_LH = 18;
     const CARD_SECTION_GAP = 6;
     const CARD_FONT =
         '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif';
+    const CARD_KEY_FONT =
+        'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
 
     function nodeTheme(type) {
         switch (type) {
             case 'target':
                 return { typeLabel: '目标', typeEn: 'TARGET', accent: '#4F46E5', bgEnd: '#F5F3FF', icon: 'target' };
             case 'finding':
-                return { typeLabel: '发现', typeEn: 'FINDING', accent: '#E11D48', bgEnd: '#FFF1F2', icon: 'vulnerability' };
+                return { typeLabel: '发现', typeEn: 'FINDING', accent: '#E11D48', bgEnd: '#FFF1F2', icon: 'finding', cardStyle: 'default' };
             case 'exploit':
-                return { typeLabel: '利用', typeEn: 'EXPLOIT', accent: '#B45309', bgEnd: '#FFFBEB', icon: 'vulnerability' };
+                return { typeLabel: '利用', typeEn: 'EXPLOIT', accent: '#B45309', bgEnd: '#FFFBEB', icon: 'vulnerability', cardStyle: 'default' };
             case 'vulnerability':
-                return { typeLabel: '漏洞', typeEn: 'VULN', accent: '#BE123C', bgEnd: '#FFF1F2', icon: 'vulnerability' };
+                return { typeLabel: '漏洞', typeEn: 'VULN', accent: '#9333EA', bgEnd: '#F5F3FF', icon: 'vuln', cardStyle: 'default' };
             case 'auth':
                 return { typeLabel: '认证', typeEn: 'AUTH', accent: '#0D9488', bgEnd: '#F0FDFA', icon: 'default' };
             case 'infra':
@@ -148,19 +153,24 @@
         return nodeWidth - CARD_TEXT_X - CARD_PAD - CARD_TEXT_PAD_RIGHT;
     }
 
-    function computeNodeLayout(type, summary, statusBadge, theme) {
+    function computeNodeLayout(type, summary, statusBadge, theme, factKey) {
         const width = type === 'target' ? CARD_TARGET_W : CARD_MIN_W;
         const textW = cardTextWidth(width);
         const t = theme || nodeTheme(type);
         const headerLines = wrapTextLines(buildHeaderText(t, statusBadge), textW, CARD_HEADER_FS, 2, true);
-        const summaryLines = wrapTextLines(summary, textW, CARD_SUMMARY_FS, 4, true);
+        const keyText = String(factKey || '').trim();
+        const keyLines = keyText ? wrapTextLines(keyText, textW, CARD_KEY_FS, 2, false) : [];
+        const summaryLines = wrapTextLines(summary, textW, CARD_SUMMARY_FS, keyLines.length ? 3 : 4, true);
+        const keyBlockHeight = keyLines.length
+            ? CARD_SECTION_GAP + keyLines.length * CARD_KEY_LH + CARD_SECTION_GAP
+            : CARD_SECTION_GAP;
         const height = Math.min(
             CARD_MAX_H,
             Math.max(
                 CARD_MIN_H,
                 CARD_PAD +
                     headerLines.length * CARD_HEADER_LH +
-                    CARD_SECTION_GAP +
+                    keyBlockHeight +
                     summaryLines.length * CARD_SUMMARY_LH +
                     CARD_PAD,
             ),
@@ -169,8 +179,11 @@
             width,
             height,
             headerLines,
+            keyLines,
             summaryLines,
-            searchLabel: headerLines.join(' ') + '\n' + summaryLines.join(' '),
+            searchLabel: [headerLines.join(' '), keyLines.join(' '), summaryLines.join(' ')]
+                .filter(Boolean)
+                .join('\n'),
         };
     }
 
@@ -181,6 +194,21 @@
                 `<g transform="translate(${x}, ${y}) scale(${scale})">` +
                 `<circle cx="12" cy="12" r="6" fill="none" stroke="${color}" stroke-width="2"/>` +
                 `<circle cx="12" cy="12" r="2.5" fill="${color}"/></g>`
+            );
+        }
+        if (kind === 'finding') {
+            return (
+                `<g transform="translate(${x}, ${y}) scale(${scale})">` +
+                `<circle cx="10" cy="10" r="6" fill="none" stroke="${color}" stroke-width="2"/>` +
+                `<line x1="14.5" y1="14.5" x2="19" y2="19" stroke="${color}" stroke-width="2" stroke-linecap="round"/></g>`
+            );
+        }
+        if (kind === 'vuln') {
+            return (
+                `<g transform="translate(${x}, ${y}) scale(${scale})">` +
+                `<path d="M12 2.5l7.5 3v6.2c0 4.6-3.1 8.1-7.5 9.3-4.4-1.2-7.5-4.7-7.5-9.3V5.5z" fill="${color}" fill-opacity="0.12" stroke="${color}" stroke-width="2"/>` +
+                `<line x1="12" y1="8.5" x2="12" y2="12.5" stroke="${color}" stroke-width="2" stroke-linecap="round"/>` +
+                `<circle cx="12" cy="15.5" r="1.1" fill="${color}"/></g>`
             );
         }
         if (kind === 'vulnerability') {
@@ -198,7 +226,7 @@
     }
 
     function buildNodeCardSvgUrl(theme, layout, confidence) {
-        const { width, height, headerLines, summaryLines } = layout;
+        const { width, height, headerLines, keyLines, summaryLines } = layout;
         const accent = theme.accent;
         const bgEnd = theme.bgEnd;
         const conf = (confidence || '').toLowerCase();
@@ -207,7 +235,14 @@
         const iconX = CARD_PAD;
         const iconY = (height - CARD_ICON) / 2;
         const headerY = CARD_PAD + CARD_HEADER_FS;
-        const summaryY = CARD_PAD + headerLines.length * CARD_HEADER_LH + CARD_SECTION_GAP + CARD_SUMMARY_FS;
+        const keyY = CARD_PAD + headerLines.length * CARD_HEADER_LH + CARD_SECTION_GAP + CARD_KEY_FS;
+        const summaryY =
+            CARD_PAD +
+            headerLines.length * CARD_HEADER_LH +
+            (keyLines.length
+                ? CARD_SECTION_GAP + keyLines.length * CARD_KEY_LH + CARD_SECTION_GAP
+                : CARD_SECTION_GAP) +
+            CARD_SUMMARY_FS;
 
         const stroke = isTentative
             ? `stroke="${accent}" stroke-width="1.5" stroke-dasharray="8 5" stroke-opacity="0.9"`
@@ -217,6 +252,13 @@
             .map(
                 (line, i) =>
                     `<text x="${CARD_TEXT_X}" y="${headerY + i * CARD_HEADER_LH}" font-size="${CARD_HEADER_FS}" font-weight="700" fill="${accent}" fill-opacity="0.88" font-family='${CARD_FONT}'>${escapeXml(line)}</text>`,
+            )
+            .join('');
+
+        const keySvg = keyLines
+            .map(
+                (line, i) =>
+                    `<text x="${CARD_TEXT_X}" y="${keyY + i * CARD_KEY_LH}" font-size="${CARD_KEY_FS}" font-weight="500" fill="#64748b" font-family='${CARD_KEY_FONT}'>${escapeXml(line)}</text>`,
             )
             .join('');
 
@@ -238,7 +280,7 @@
             `<g${isDeprecated ? ' opacity="0.55"' : ''}>` +
             `<rect x="0.75" y="0.75" width="${width - 1.5}" height="${height - 1.5}" rx="12" fill="url(#bg)" ${stroke}/>` +
             svgIconGroup(theme.icon, accent, iconX, iconY) +
-            `<g clip-path="url(#textClip)">${headerSvg}${summarySvg}</g>` +
+            `<g clip-path="url(#textClip)">${headerSvg}${keySvg}${summarySvg}</g>` +
             `</g></svg>`;
 
         try {
@@ -249,6 +291,10 @@
     }
 
     function destroy() {
+        if (_resizeObs) {
+            _resizeObs.disconnect();
+            _resizeObs = null;
+        }
         if (_cy) {
             _cy.destroy();
             _cy = null;
@@ -256,9 +302,28 @@
         _graphData = null;
     }
 
+    function observeContainerResize(container) {
+        if (_resizeObs) {
+            _resizeObs.disconnect();
+            _resizeObs = null;
+        }
+        if (!container || typeof ResizeObserver === 'undefined') return;
+        _resizeObs = new ResizeObserver(() => {
+            if (_cy) {
+                try {
+                    _cy.resize();
+                } catch (e) {
+                    console.warn('graph resize', e);
+                }
+            }
+        });
+        _resizeObs.observe(container);
+    }
+
     function centerGraph() {
         if (!_cy) return;
         try {
+            _cy.resize();
             _cy.fit(undefined, 56);
             if (_cy.zoom() < 0.65) {
                 _cy.zoom(0.65);
@@ -273,17 +338,13 @@
     function pathGraphNodeLayer(type, factKey) {
         const key = (factKey || '').toLowerCase();
         if (key.startsWith('vuln:')) return '4';
-        if (key.startsWith('target/')) return '0';
-        if (key.startsWith('infra/') || key.startsWith('auth/') || key.startsWith('business/')) return '1';
-        if (key.startsWith('exploit/') || key.startsWith('evidence/')) return '3';
-        if (key.startsWith('poc/')) return '3';
-        if (key.startsWith('chain/')) return '2';
-        if (key.startsWith('finding/')) return '2';
         const t = (type || '').toLowerCase();
         if (t === 'target') return '0';
-        if (t === 'infra' || t === 'auth') return '1';
+        if (t === 'infra' || t === 'auth' || t === 'business') return '1';
         if (t === 'exploit' || t === 'poc') return '3';
-        if (t === 'chain' || t === 'finding' || t === 'vulnerability') return '2';
+        if (t === 'vulnerability' || t === 'vuln') return '3';
+        if (t === 'chain' || t === 'finding') return '2';
+        if (t === 'note') return '2';
         return '2';
     }
 
@@ -408,16 +469,19 @@
 
         nodes.forEach((node) => {
             nodeIds.add(node.id);
-            const theme = nodeTheme(node.type || node.category || 'note');
-            const label = node.label || node.fact_key || node.id;
+            const visualType = resolveGraphNodeType(node);
+            const theme = nodeTheme(visualType);
+            const factKey = node.fact_key || node.id;
+            const summary = (node.summary || node.label || '').trim() || '—';
             const statusBadge = buildStatusBadge(node.confidence);
-            const layout = computeNodeLayout(node.type || node.category || 'note', label, statusBadge, theme);
+            const layout = computeNodeLayout(visualType, summary, statusBadge, theme, factKey);
             elements.push({
                 data: {
                     id: node.id,
                     label: layout.searchLabel,
                     factKey: node.fact_key || node.id,
-                    type: node.type || 'note',
+                    category: node.category || '',
+                    type: visualType,
                     typeLabel: theme.typeLabel,
                     typeEn: theme.typeEn,
                     accentColor: theme.accent,
@@ -529,6 +593,7 @@
         });
 
         applyElkLayout(validEdges, isComplex);
+        observeContainerResize(container);
         return _cy;
     }
 
@@ -577,21 +642,28 @@
         }
     }
 
-    /** 与后端 GraphNodeType 一致：优先 fact_key 前缀，再 category/type。 */
+    /** 与后端 GraphNodeType 一致：优先 category，vuln: 合成节点例外；无 category 时回退 type/key。 */
     function resolveGraphNodeType(node) {
         if (!node) return 'note';
         const key = String(node.fact_key || node.id || '').toLowerCase();
+        if (key.startsWith('vuln:')) return 'vulnerability';
+        const cat = String(node.category || '').toLowerCase();
+        if (cat) {
+            if (cat === 'vuln') return 'vulnerability';
+            if (cat === 'missing') return 'missing';
+            return cat;
+        }
+        const t = String(node.type || '').toLowerCase();
+        if (t === 'vuln') return 'vulnerability';
+        if (t) return t;
         if (key.startsWith('target/')) return 'target';
-        if (key.startsWith('exploit/') || key.startsWith('poc/') || key.startsWith('evidence/')) return 'exploit';
+        if (key.startsWith('exploit/') || key.startsWith('evidence/')) return 'exploit';
+        if (key.startsWith('poc/')) return 'poc';
         if (key.startsWith('chain/')) return 'chain';
         if (key.startsWith('finding/')) return 'finding';
         if (key.startsWith('auth/')) return 'auth';
-        if (key.startsWith('infra/')) return 'infra';
-        if (key.startsWith('business/')) return 'business';
-        if (key.startsWith('vuln:')) return 'vulnerability';
-        const t = String(node.type || node.category || 'note').toLowerCase();
-        if (t === 'vuln') return 'vulnerability';
-        return t || 'note';
+        if (key.startsWith('infra/') || key.startsWith('business/')) return 'infra';
+        return 'note';
     }
 
     global.ProjectFactGraph = {

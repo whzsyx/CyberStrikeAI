@@ -1664,11 +1664,24 @@
                                     </div>
                                     <div class="project-fact-graph-footer">
                                         <div id="project-fact-graph-stats" class="project-fact-graph-stats"></div>
-                                        <div class="projects-graph-legend" aria-hidden="true">
-                                            <span class="projects-graph-legend-item"><i style="--legend-color:#4F46E5"></i><span data-i18n="projects.graphLegendDiscovered">discovered_on</span></span>
-                                            <span class="projects-graph-legend-item"><i style="--legend-color:#64748B"></i><span data-i18n="projects.graphLegendLeads">leads_to</span></span>
-                                            <span class="projects-graph-legend-item"><i style="--legend-color:#DC2626"></i><span data-i18n="projects.graphLegendExploits">exploits</span></span>
-                                            <span class="projects-graph-legend-item projects-graph-legend-item--dashed"><i style="--legend-color:#94A3B8"></i><span data-i18n="projects.graphLegendTentative">待确认</span></span>
+                                        <div class="projects-graph-legend" role="group" aria-label="Graph legend">
+                                            <div class="projects-graph-legend-group">
+                                                <span class="projects-graph-legend-heading" data-i18n="projects.graphLegendNodes">节点</span>
+                                                <span class="projects-graph-legend-item projects-graph-legend-item--node"><i style="--legend-color:#4F46E5;--legend-bg:#F5F3FF"></i><span data-i18n="projects.graphLegendNodeTarget">TARGET · 目标</span></span>
+                                                <span class="projects-graph-legend-item projects-graph-legend-item--node"><i style="--legend-color:#64748B;--legend-bg:#F8FAFC"></i><span data-i18n="projects.graphLegendNodeInfra">INFRA · 基础设施</span></span>
+                                                <span class="projects-graph-legend-item projects-graph-legend-item--node"><i style="--legend-color:#E11D48;--legend-bg:#FFF1F2"></i><span data-i18n="projects.graphLegendNodeFinding">FINDING · 发现</span></span>
+                                                <span class="projects-graph-legend-item projects-graph-legend-item--node"><i style="--legend-color:#9333EA;--legend-bg:#F5F3FF"></i><span data-i18n="projects.graphLegendNodeVuln">VULN · 漏洞</span></span>
+                                                <span class="projects-graph-legend-item projects-graph-legend-item--node"><i style="--legend-color:#B45309;--legend-bg:#FFFBEB"></i><span data-i18n="projects.graphLegendNodeExploit">EXPLOIT · 利用</span></span>
+                                                <span class="projects-graph-legend-item projects-graph-legend-item--node projects-graph-legend-item--node-dashed"><i style="--legend-color:#CBD5E1;--legend-bg:#F1F5F9"></i><span data-i18n="projects.graphLegendNodeMissing">MISSING · 缺失</span></span>
+                                            </div>
+                                            <span class="projects-graph-legend-divider" aria-hidden="true"></span>
+                                            <div class="projects-graph-legend-group">
+                                                <span class="projects-graph-legend-heading" data-i18n="projects.graphLegendEdges">连线</span>
+                                                <span class="projects-graph-legend-item projects-graph-legend-item--edge"><i style="--legend-color:#4F46E5"></i><span data-i18n="projects.graphLegendDiscovered">discovered_on</span></span>
+                                                <span class="projects-graph-legend-item projects-graph-legend-item--edge"><i style="--legend-color:#64748B"></i><span data-i18n="projects.graphLegendLeads">leads_to</span></span>
+                                                <span class="projects-graph-legend-item projects-graph-legend-item--edge"><i style="--legend-color:#DC2626"></i><span data-i18n="projects.graphLegendExploits">exploits</span></span>
+                                                <span class="projects-graph-legend-item projects-graph-legend-item--edge projects-graph-legend-item--dashed"><i style="--legend-color:#94A3B8"></i><span data-i18n="projects.graphLegendTentative">待确认（虚线）</span></span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
