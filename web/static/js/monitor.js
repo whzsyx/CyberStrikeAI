@@ -3527,10 +3527,12 @@ let monitorPanelFetchSeq = 0;
 // 监控面板状态
 const monitorState = {
     executions: [],
-    stats: {},
+    summary: null,
+    topTools: [],
     timeline: null,
     timelineRange: null,
     timelineError: null,
+    timelineLoading: false,
     lastFetchedAt: null,
     retentionDays: 0,
     pagination: {
@@ -3626,17 +3628,14 @@ async function refreshMonitorPanel(page = null) {
 
     try {
         const mySeq = ++monitorPanelFetchSeq;
-        // 如果指定了页码，使用指定页码，否则使用当前页码
         const currentPage = page !== null ? page : monitorState.pagination.page;
         const pageSize = monitorState.pagination.pageSize;
-        
-        // 获取当前的筛选条件
+
         const statusFilter = document.getElementById('monitor-status-filter');
         const toolFilter = document.getElementById('monitor-tool-filter');
         const currentStatusFilter = statusFilter ? statusFilter.value : 'all';
         const currentToolFilter = toolFilter ? (toolFilter.value.trim() || 'all') : 'all';
-        
-        // 构建请求 URL
+
         let url = `/api/monitor?page=${currentPage}&page_size=${pageSize}`;
         if (currentStatusFilter && currentStatusFilter !== 'all') {
             url += `&status=${encodeURIComponent(currentStatusFilter)}`;
@@ -3644,37 +3643,34 @@ async function refreshMonitorPanel(page = null) {
         if (currentToolFilter && currentToolFilter !== 'all') {
             url += `&tool=${encodeURIComponent(currentToolFilter)}`;
         }
-        
-        const { result, timeline, timelineError } = await fetchMonitorAndTimeline(url);
+
+        const range = getMcpMonitorTimelineRange();
+        monitorState.timelineLoading = true;
+        const timelinePromise = fetchMonitorTimeline(range);
+
+        const monitorResp = await apiFetch(url, { method: 'GET' });
+        const result = await monitorResp.json().catch(() => ({}));
+        if (!monitorResp.ok) {
+            throw new Error(result.error || '获取监控数据失败');
+        }
         if (mySeq !== monitorPanelFetchSeq) {
             return;
         }
 
-        monitorState.executions = Array.isArray(result.executions) ? result.executions : [];
-        monitorState.stats = result.stats || {};
+        applyMonitorPayload(result, currentStatusFilter);
+
+        const { timeline, timelineError } = await timelinePromise;
+        if (mySeq !== monitorPanelFetchSeq) {
+            return;
+        }
         monitorState.timeline = timeline;
         monitorState.timelineError = timelineError;
-        monitorState.lastFetchedAt = new Date();
-        monitorState.retentionDays = typeof result.retention_days === 'number' ? result.retention_days : 0;
-        
-        // 更新分页信息
-        if (result.total !== undefined) {
-            monitorState.pagination = {
-                page: result.page || currentPage,
-                pageSize: result.page_size || pageSize,
-                total: result.total || 0,
-                totalPages: result.total_pages || 1
-            };
-        }
-
-        renderMonitorStats(monitorState.stats, monitorState.lastFetchedAt);
-        renderMonitorExecutions(monitorState.executions, currentStatusFilter);
-        renderMonitorPagination();
-        
-        // 初始化每页显示数量选择器
+        monitorState.timelineLoading = false;
+        updateMonitorTimelineSection();
         initializeMonitorPageSize();
     } catch (error) {
         console.error('刷新监控面板失败:', error);
+        monitorState.timelineLoading = false;
         if (statsContainer) {
             statsContainer.innerHTML = `<div class="monitor-error">${escapeHtml(typeof window.t === 'function' ? window.t('mcpMonitor.loadStatsError') : '无法加载统计信息')}：${escapeHtml(error.message)}</div>`;
         }
@@ -3717,10 +3713,9 @@ async function refreshMonitorPanelWithFilter(statusFilter = 'all', toolFilter = 
 
     try {
         const mySeq = ++monitorPanelFetchSeq;
-        const currentPage = 1; // 筛选时重置到第一页
+        const currentPage = 1;
         const pageSize = monitorState.pagination.pageSize;
-        
-        // 构建请求 URL
+
         let url = `/api/monitor?page=${currentPage}&page_size=${pageSize}`;
         if (statusFilter && statusFilter !== 'all') {
             url += `&status=${encodeURIComponent(statusFilter)}`;
@@ -3728,43 +3723,97 @@ async function refreshMonitorPanelWithFilter(statusFilter = 'all', toolFilter = 
         if (toolFilter && toolFilter !== 'all') {
             url += `&tool=${encodeURIComponent(toolFilter)}`;
         }
-        
-        const { result, timeline, timelineError } = await fetchMonitorAndTimeline(url);
+
+        const range = getMcpMonitorTimelineRange();
+        monitorState.timelineLoading = true;
+        const timelinePromise = fetchMonitorTimeline(range);
+
+        const monitorResp = await apiFetch(url, { method: 'GET' });
+        const result = await monitorResp.json().catch(() => ({}));
+        if (!monitorResp.ok) {
+            throw new Error(result.error || '获取监控数据失败');
+        }
         if (mySeq !== monitorPanelFetchSeq) {
             return;
         }
 
-        monitorState.executions = Array.isArray(result.executions) ? result.executions : [];
-        monitorState.stats = result.stats || {};
+        applyMonitorPayload(result, statusFilter);
+
+        const { timeline, timelineError } = await timelinePromise;
+        if (mySeq !== monitorPanelFetchSeq) {
+            return;
+        }
         monitorState.timeline = timeline;
         monitorState.timelineError = timelineError;
-        monitorState.lastFetchedAt = new Date();
-        monitorState.retentionDays = typeof result.retention_days === 'number' ? result.retention_days : 0;
-        
-        // 更新分页信息
-        if (result.total !== undefined) {
-            monitorState.pagination = {
-                page: result.page || currentPage,
-                pageSize: result.page_size || pageSize,
-                total: result.total || 0,
-                totalPages: result.total_pages || 1
-            };
-        }
-
-        renderMonitorStats(monitorState.stats, monitorState.lastFetchedAt);
-        renderMonitorExecutions(monitorState.executions, statusFilter);
-        renderMonitorPagination();
-        
-        // 初始化每页显示数量选择器
+        monitorState.timelineLoading = false;
+        updateMonitorTimelineSection();
         initializeMonitorPageSize();
     } catch (error) {
         console.error('刷新监控面板失败:', error);
+        monitorState.timelineLoading = false;
         if (statsContainer) {
             statsContainer.innerHTML = `<div class="monitor-error">${escapeHtml(typeof window.t === 'function' ? window.t('mcpMonitor.loadStatsError') : '无法加载统计信息')}：${escapeHtml(error.message)}</div>`;
         }
         if (execContainer) {
             execContainer.innerHTML = `<div class="monitor-error">${escapeHtml(typeof window.t === 'function' ? window.t('mcpMonitor.loadExecutionsError') : '无法加载执行记录')}：${escapeHtml(error.message)}</div>`;
         }
+    }
+}
+
+function applyMonitorPayload(result, statusFilter) {
+    const currentPage = monitorState.pagination.page;
+    const pageSize = monitorState.pagination.pageSize;
+
+    monitorState.executions = Array.isArray(result.executions) ? result.executions : [];
+    monitorState.summary = result.summary || null;
+    monitorState.topTools = Array.isArray(result.topTools) ? result.topTools : [];
+    monitorState.lastFetchedAt = new Date();
+    monitorState.retentionDays = typeof result.retentionDays === 'number' ? result.retentionDays : 0;
+
+    if (result.total !== undefined) {
+        monitorState.pagination = {
+            page: result.page || currentPage,
+            pageSize: result.pageSize || pageSize,
+            total: result.total || 0,
+            totalPages: result.totalPages || 1
+        };
+    }
+
+    renderMonitorStats(monitorState.summary, monitorState.topTools, monitorState.lastFetchedAt);
+    renderMonitorExecutions(monitorState.executions, statusFilter);
+    renderMonitorPagination();
+}
+
+async function fetchMonitorTimeline(range) {
+    try {
+        const timelineResp = await apiFetch(`/api/monitor/calls-timeline?range=${encodeURIComponent(range)}`, { method: 'GET' });
+        const timelineJson = await timelineResp.json().catch(() => ({}));
+        if (!timelineResp.ok) {
+            return { timeline: null, timelineError: timelineJson.error || 'timeline failed' };
+        }
+        return { timeline: timelineJson, timelineError: null };
+    } catch (err) {
+        return { timeline: null, timelineError: err && err.message ? err.message : 'timeline failed' };
+    }
+}
+
+function updateMonitorTimelineSection() {
+    const timelineInner = document.querySelector('#monitor-stats .mcp-stats-combined__timeline-inner');
+    if (timelineInner) {
+        const combined = timelineInner.closest('.mcp-stats-combined');
+        const compactEmpty = combined && !!combined.querySelector('.mcp-stats-combined__main');
+        timelineInner.innerHTML = renderMcpStatsTimelineBody(
+            monitorState.timeline,
+            monitorState.timelineError,
+            compactEmpty,
+            monitorState.timelineLoading
+        );
+        bindMcpStatsTimelineEvents();
+        syncMcpMonitorTimelineRangeUI();
+        return;
+    }
+    if (monitorState.summary) {
+        renderMonitorStats(monitorState.summary, monitorState.topTools, monitorState.lastFetchedAt);
     }
 }
 
@@ -3782,29 +3831,14 @@ function getMcpMonitorTimelineRange() {
     return range;
 }
 
-async function fetchMonitorAndTimeline(monitorUrl) {
-    const range = getMcpMonitorTimelineRange();
-    const [monitorResp, timelineResp] = await Promise.all([
-        apiFetch(monitorUrl, { method: 'GET' }),
-        apiFetch(`/api/monitor/calls-timeline?range=${encodeURIComponent(range)}`, { method: 'GET' })
-    ]);
-    const result = await monitorResp.json().catch(() => ({}));
-    if (!monitorResp.ok) {
-        throw new Error(result.error || '获取监控数据失败');
-    }
-    let timeline = null;
-    let timelineError = null;
-    try {
-        const timelineJson = await timelineResp.json().catch(() => ({}));
-        if (timelineResp.ok) {
-            timeline = timelineJson;
-        } else {
-            timelineError = timelineJson.error || 'timeline failed';
-        }
-    } catch (err) {
-        timelineError = err && err.message ? err.message : 'timeline failed';
-    }
-    return { result, timeline, timelineError };
+function buildMonitorTotals(summary) {
+    const s = summary && typeof summary === 'object' ? summary : {};
+    return {
+        total: s.totalCalls || 0,
+        success: s.successCalls || 0,
+        failed: s.failedCalls || 0,
+        lastCallTime: s.lastCallTime ? new Date(s.lastCallTime) : null,
+    };
 }
 
 function formatMcpTimelineLabel(isoOrDate, rangeKey, locale) {
@@ -4028,34 +4062,19 @@ async function setMcpMonitorTimelineRange(range) {
     localStorage.setItem('mcpMonitorTimelineRange', range);
     monitorState.timelineRange = range;
     monitorState.timelineError = null;
+    monitorState.timelineLoading = true;
     syncMcpMonitorTimelineRangeUI(range);
+    updateMonitorTimelineSection();
     try {
-        const timelineResp = await apiFetch(`/api/monitor/calls-timeline?range=${encodeURIComponent(range)}`, { method: 'GET' });
-        const timelineJson = await timelineResp.json().catch(() => ({}));
-        if (!timelineResp.ok) {
-            throw new Error(timelineJson.error || '加载趋势失败');
-        }
-        monitorState.timeline = timelineJson;
-        const timelineInner = document.querySelector('#monitor-stats .mcp-stats-combined__timeline-inner');
-        if (timelineInner) {
-            const combined = timelineInner.closest('.mcp-stats-combined');
-            const compactEmpty = combined && !!combined.querySelector('.mcp-stats-combined__main');
-            timelineInner.innerHTML = renderMcpStatsTimelineBody(monitorState.timeline, monitorState.timelineError, compactEmpty);
-            bindMcpStatsTimelineEvents();
-            syncMcpMonitorTimelineRangeUI(range);
-        } else if (monitorState.stats && Object.keys(monitorState.stats).length > 0) {
-            renderMonitorStats(monitorState.stats, monitorState.lastFetchedAt);
-        }
+        const { timeline, timelineError } = await fetchMonitorTimeline(range);
+        monitorState.timeline = timeline;
+        monitorState.timelineError = timelineError;
+        monitorState.timelineLoading = false;
+        updateMonitorTimelineSection();
     } catch (err) {
         monitorState.timelineError = err.message || 'error';
-        const timelineInner = document.querySelector('#monitor-stats .mcp-stats-combined__timeline-inner');
-        if (timelineInner) {
-            const combined = timelineInner.closest('.mcp-stats-combined');
-            const compactEmpty = combined && !!combined.querySelector('.mcp-stats-combined__main');
-            timelineInner.innerHTML = renderMcpStatsTimelineBody(monitorState.timeline, monitorState.timelineError, compactEmpty);
-            bindMcpStatsTimelineEvents();
-            syncMcpMonitorTimelineRangeUI(range);
-        }
+        monitorState.timelineLoading = false;
+        updateMonitorTimelineSection();
     }
 }
 window.setMcpMonitorTimelineRange = setMcpMonitorTimelineRange;
@@ -4084,7 +4103,12 @@ function renderMcpStatsTimelineEmptyState(compact) {
     </div>`;
 }
 
-function renderMcpStatsTimelineBody(timeline, timelineError, compactEmpty) {
+function renderMcpStatsTimelineBody(timeline, timelineError, compactEmpty, loading) {
+    if (loading) {
+        const loadingText = mcpMonitorT('timelineLoading') || monitorFallback('趋势加载中…', 'Loading trend…');
+        return `<div class="monitor-empty monitor-empty--inline">${escapeHtml(loadingText)}</div>`;
+    }
+
     const hint = mcpMonitorT('timelineHint') || monitorFallback('全部工具合计', 'All tools combined');
 
     if (timelineError) {
@@ -4152,7 +4176,7 @@ function renderMcpStatsCombinedSection(topTools, totals, activeToolFilter, timel
     const timelineCol = showTimeline
         ? `<div class="mcp-stats-combined__timeline">
             <p class="mcp-stats-combined__col-label">${escapeHtml(timelineTitle)}</p>
-            <div class="mcp-stats-combined__timeline-inner">${renderMcpStatsTimelineBody(timeline, timelineError, hasTools)}</div>
+            <div class="mcp-stats-combined__timeline-inner">${renderMcpStatsTimelineBody(timeline, timelineError, hasTools, monitorState.timelineLoading)}</div>
         </div>`
         : '';
 
@@ -4207,18 +4231,9 @@ function refreshMonitorPanelFromState() {
     if (!monitorState.lastFetchedAt) return;
     const statusFilter = document.getElementById('monitor-status-filter');
     const currentStatusFilter = statusFilter ? statusFilter.value : 'all';
-    renderMonitorStats(monitorState.stats || {}, monitorState.lastFetchedAt);
+    renderMonitorStats(monitorState.summary, monitorState.topTools, monitorState.lastFetchedAt);
     renderMonitorExecutions(monitorState.executions || [], currentStatusFilter);
     renderMonitorPagination();
-}
-
-function normalizeMonitorStatsEntries(statsMap) {
-    if (!statsMap || typeof statsMap !== 'object') return [];
-    return Object.entries(statsMap).map(([key, item]) => {
-        const stat = item && typeof item === 'object' ? { ...item } : {};
-        if (!stat.toolName) stat.toolName = key;
-        return stat;
-    });
 }
 
 const MCP_STATS_TOOL_CHEVRON = '<svg class="mcp-stats-tool-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>';
@@ -4915,35 +4930,25 @@ function renderMcpStatsToolRanking(topTools, totals, activeToolFilter = '', opti
     return renderMcpStatsDetailSection(topTools, totals, activeToolFilter);
 }
 
-function renderMonitorStats(statsMap = {}, lastFetchedAt = null) {
+function renderMonitorStats(summary = null, topTools = [], lastFetchedAt = null) {
     const container = document.getElementById('monitor-stats');
     if (!container) {
         return;
     }
 
-    const entries = normalizeMonitorStatsEntries(statsMap);
-    const showTimeline = monitorState.timeline != null || !!monitorState.timelineError;
-    if (entries.length === 0 && !showTimeline) {
+    const tools = Array.isArray(topTools) ? topTools : [];
+    const totals = buildMonitorTotals(summary);
+    const toolCount = summary && typeof summary.toolCount === 'number' ? summary.toolCount : tools.length;
+    const showTimeline = monitorState.timelineLoading || monitorState.timeline != null || !!monitorState.timelineError;
+    const hasSummaryData = toolCount > 0 || totals.total > 0;
+
+    if (!hasSummaryData && !showTimeline) {
         const noStats = mcpMonitorT('noStatsData') || monitorFallback('暂无统计数据', 'No statistical data');
         container.innerHTML = '<div class="monitor-empty">' + escapeHtml(noStats) + '</div>';
         const subtitle = document.getElementById('monitor-stats-subtitle');
         if (subtitle) subtitle.hidden = true;
         return;
     }
-
-    const totals = entries.reduce(
-        (acc, item) => {
-            acc.total += item.totalCalls || 0;
-            acc.success += item.successCalls || 0;
-            acc.failed += item.failedCalls || 0;
-            const lastCall = item.lastCallTime ? new Date(item.lastCallTime) : null;
-            if (lastCall && (!acc.lastCallTime || lastCall > acc.lastCallTime)) {
-                acc.lastCallTime = lastCall;
-            }
-            return acc;
-        },
-        { total: 0, success: 0, failed: 0, lastCallTime: null }
-    );
 
     const hasCalls = totals.total > 0;
     const successRateNum = hasCalls ? (totals.success / totals.total) * 100 : 0;
@@ -4965,19 +4970,13 @@ function renderMonitorStats(statsMap = {}, lastFetchedAt = null) {
     const toolFilterEl = document.getElementById('monitor-tool-filter');
     const activeToolFilter = toolFilterEl ? toolFilterEl.value.trim() : '';
 
-    const topTools = entries
-        .filter(tool => (tool.totalCalls || 0) > 0)
-        .slice()
-        .sort((a, b) => (b.totalCalls || 0) - (a.totalCalls || 0))
-        .slice(0, MCP_STATS_TOP_N);
-
     const hasAnyCalls = totals.total > 0;
-    const showCombined = hasAnyCalls && (topTools.length > 0 || showTimeline);
+    const showCombined = hasAnyCalls && (tools.length > 0 || showTimeline);
     const html = `
         <div class="mcp-exec-stats">
             ${renderMcpStatsMetricsBar(totals, successRate, rateTone, rateSubText, lastCallText, hasCalls)}
             ${showCombined ? renderMcpStatsCombinedSection(
-                topTools,
+                tools,
                 totals,
                 activeToolFilter,
                 monitorState.timeline,
@@ -4995,7 +4994,7 @@ function renderMonitorStats(statsMap = {}, lastFetchedAt = null) {
     } else if (toolFilterEl) {
         toolFilterEl.classList.remove('is-filter-active');
     }
-    updateMonitorStatsSubtitle(lastFetchedAt, entries.length, monitorState.retentionDays);
+    updateMonitorStatsSubtitle(lastFetchedAt, toolCount, monitorState.retentionDays);
 }
 
 function renderMonitorExecutions(executions = [], statusFilter = 'all') {

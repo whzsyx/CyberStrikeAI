@@ -118,7 +118,7 @@ async function refreshDashboard() {
             fetchJson('/api/agent-loop/tasks'),
             fetchJson('/api/vulnerabilities/stats'),
             fetchJson('/api/batch-tasks?limit=500&page=1'),
-            fetchJson('/api/monitor/stats'),
+            fetchJson('/api/monitor/stats?top=30'),
             fetchJson('/api/knowledge/stats'),
             fetchJson('/api/skills/stats'),
             fetchJson('/api/vulnerabilities?limit=10&page=1'),
@@ -301,36 +301,27 @@ async function refreshDashboard() {
             updateProgressBar('dashboard-batch-progress-done', '0');
         }
 
-        // 工具调用：monitor/stats 为 { toolName: { totalCalls, successCalls, failedCalls, ... } }
+        // 工具调用：monitor/stats 为 { summary, topTools }
         let toolsCount = 0, toolsTotalCalls = 0, toolsSuccessRate = -1, toolsFailedCount = 0;
-        if (monitorRes && typeof monitorRes === 'object') {
-            const names = Object.keys(monitorRes);
-            let totalCalls = 0, totalSuccess = 0, totalFailed = 0;
-            names.forEach(k => {
-                const v = monitorRes[k];
-                const n = v && (v.totalCalls ?? v.TotalCalls);
-                if (typeof n === 'number') totalCalls += n;
-                const s = v && (v.successCalls ?? v.SuccessCalls);
-                if (typeof s === 'number') totalSuccess += s;
-                const f = v && (v.failedCalls ?? v.FailedCalls);
-                if (typeof f === 'number') totalFailed += f;
-            });
-            toolsCount = names.length;
-            toolsTotalCalls = totalCalls;
-            toolsFailedCount = totalFailed;
-            setEl('dashboard-kpi-tools-calls', formatNumber(totalCalls));
+        if (monitorRes && monitorRes.summary) {
+            const s = monitorRes.summary;
+            toolsCount = s.toolCount || 0;
+            toolsTotalCalls = s.totalCalls || 0;
+            toolsFailedCount = s.failedCalls || 0;
+            const totalSuccess = s.successCalls || 0;
+            setEl('dashboard-kpi-tools-calls', formatNumber(toolsTotalCalls));
             setKpiSubText('dashboard-kpi-tools-sub-text',
                 dt('dashboard.toolsCountLabel', { count: toolsCount }, toolsCount + ' 个工具'));
-            if (totalCalls > 0) {
-                toolsSuccessRate = (totalSuccess / totalCalls) * 100;
+            if (toolsTotalCalls > 0) {
+                toolsSuccessRate = (totalSuccess / toolsTotalCalls) * 100;
                 const rateStr = toolsSuccessRate.toFixed(1) + '%';
                 setEl('dashboard-kpi-success-rate', rateStr);
-                setKpiRateBadge('dashboard-kpi-rate-sub-text', toolsSuccessRate, totalFailed);
+                setKpiRateBadge('dashboard-kpi-rate-sub-text', toolsSuccessRate, toolsFailedCount);
             } else {
                 setEl('dashboard-kpi-success-rate', '-');
                 setKpiSubText('dashboard-kpi-rate-sub-text', dt('dashboard.noCallYet', null, '暂无调用'));
             }
-            renderDashboardToolsBar(monitorRes);
+            renderDashboardToolsBar(monitorRes.topTools);
         } else {
             setEl('dashboard-kpi-tools-calls', '-');
             setEl('dashboard-kpi-success-rate', '-');
@@ -1615,12 +1606,12 @@ function renderSeverityInsights(bySeverityOpen, totalOpen, recentVulnsRes) {
     }
 }
 
-function renderDashboardToolsBar(monitorRes) {
+function renderDashboardToolsBar(topTools) {
     const placeholder = document.getElementById('dashboard-tools-pie-placeholder');
     const barChartEl = document.getElementById('dashboard-tools-bar-chart');
     if (!placeholder || !barChartEl) return;
 
-    if (!monitorRes || typeof monitorRes !== 'object') {
+    if (!Array.isArray(topTools) || topTools.length === 0) {
         placeholder.style.removeProperty('display');
         placeholder.textContent = (typeof window.t === 'function' ? window.t('dashboard.noCallData') : '暂无调用数据');
         barChartEl.style.display = 'none';
@@ -1628,11 +1619,12 @@ function renderDashboardToolsBar(monitorRes) {
         return;
     }
 
-    const entries = Object.keys(monitorRes).map(function (k) {
-        const v = monitorRes[k];
-        const totalCalls = v && (v.totalCalls ?? v.TotalCalls);
-        return { name: k, totalCalls: typeof totalCalls === 'number' ? totalCalls : 0 };
-    }).filter(function (e) { return e.totalCalls > 0; })
+    const entries = topTools.map(function (t) {
+        return {
+            name: t.toolName || '',
+            totalCalls: typeof t.totalCalls === 'number' ? t.totalCalls : 0,
+        };
+    }).filter(function (e) { return e.name && e.totalCalls > 0; })
         .sort(function (a, b) { return b.totalCalls - a.totalCalls; })
         .slice(0, 30);
 
