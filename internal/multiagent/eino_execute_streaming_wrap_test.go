@@ -61,12 +61,6 @@ func TestEinoStreamingShellWrap_PreparesNonInteractiveCommand(t *testing.T) {
 			t.Fatalf("recv: %v", rerr)
 		}
 	}
-	if !strings.Contains(inner.lastCommand, "exec </dev/null") {
-		t.Fatalf("missing stdin redirect in inner command: %q", inner.lastCommand)
-	}
-	if !strings.Contains(inner.lastCommand, "GIT_PAGER=cat") {
-		t.Fatalf("missing pager export in inner command: %q", inner.lastCommand)
-	}
 	if !strings.Contains(inner.lastCommand, "PYTHONUNBUFFERED=1") {
 		t.Fatalf("missing python unbuffer in inner command: %q", inner.lastCommand)
 	}

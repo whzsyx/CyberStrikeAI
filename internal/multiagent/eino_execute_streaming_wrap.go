@@ -84,7 +84,7 @@ func (w *einoStreamingShellWrap) ExecuteStreaming(ctx context.Context, input *fi
 	if security.IsBackgroundShellCommand(req.Command) && !req.RunInBackendGround {
 		req.RunInBackendGround = true
 	}
-	req.Command = security.PrepareNonInteractiveShellCommand(prependPythonUnbufferedEnv(req.Command))
+	req.Command = prependPythonUnbufferedEnv(req.Command)
 	convID := mcp.MCPConversationIDFromContext(ctx)
 	execReg := mcp.EinoExecuteRunRegistryFromContext(ctx)
 
