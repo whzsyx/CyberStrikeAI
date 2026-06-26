@@ -2006,6 +2006,10 @@
   "settingsBasic": {
     "basicTitle": "基本设置",
     "openaiConfig": "OpenAI 配置",
+    "apiProvider": "API 提供商",
+    "providerOpenAI": "OpenAI / 兼容 OpenAI 协议",
+    "providerClaude": "Claude (Anthropic Messages API)",
+    "visionProviderReuseOpenAI": "OpenAI 配置（留空复用）",
     "fofaConfig": "FOFA 配置",
     "agentConfig": "Agent 配置",
     "knowledgeConfig": "知识库配置",

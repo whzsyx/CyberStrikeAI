@@ -2018,6 +2018,10 @@
   "settingsBasic": {
     "basicTitle": "Basic settings",
     "openaiConfig": "OpenAI config",
+    "apiProvider": "API Provider",
+    "providerOpenAI": "OpenAI / OpenAI-compatible API",
+    "providerClaude": "Claude (Anthropic Messages API)",
+    "visionProviderReuseOpenAI": "Reuse OpenAI config (leave empty)",
     "fofaConfig": "FOFA config",
     "agentConfig": "Agent config",
     "knowledgeConfig": "Knowledge base config",
