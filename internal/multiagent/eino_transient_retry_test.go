@@ -143,3 +143,18 @@ func TestAppendUserMessageIfNeeded(t *testing.T) {
 		t.Fatalf("should not duplicate user message: len=%d", len(dup))
 	}
 }
+
+func TestAppendUserMessageIfNeeded_repeatPromptAfterAssistant(t *testing.T) {
+	t.Parallel()
+	msgs := []adk.Message{
+		schema.UserMessage("扫描 example.com"),
+		schema.AssistantMessage("开始扫描...", nil),
+	}
+	out := appendUserMessageIfNeeded(msgs, "扫描 example.com")
+	if len(out) != 3 {
+		t.Fatalf("should append new user turn after assistant reply: len=%d", len(out))
+	}
+	if out[2].Role != schema.User || out[2].Content != "扫描 example.com" {
+		t.Fatalf("tail should be repeated user prompt, got role=%s content=%q", out[2].Role, out[2].Content)
+	}
+}

@@ -190,29 +190,26 @@ func einoMessagesForRunRestart(args *einoADKRunLoopArgs, baseMsgs, accumulated [
 	return append([]adk.Message(nil), baseMsgs...), einoRestartContextInitial
 }
 
-// adkMessagesHasUserContent 从尾部向前查找，是否已有与 want 相同的 user 消息（避免重复 append）。
+// adkMessagesHasUserContent reports whether the conversation tail is already a user turn
+// with the given content. Only the last message counts: matching text in an earlier round
+// (e.g. user repeats the same prompt after an assistant reply) must not suppress appending
+// the new user turn — Claude 4.6+ rejects requests whose final message is assistant.
 func adkMessagesHasUserContent(msgs []adk.Message, want string) bool {
 	want = strings.TrimSpace(want)
 	if want == "" {
 		return true
 	}
-	for i := len(msgs) - 1; i >= 0; i-- {
-		m := msgs[i]
-		if m == nil {
-			continue
-		}
-		if m.Role == schema.User {
-			return strings.TrimSpace(m.Content) == want
-		}
-		if m.Role == schema.Assistant || m.Role == schema.Tool {
-			continue
-		}
-		break
+	if len(msgs) == 0 {
+		return false
 	}
-	return false
+	last := msgs[len(msgs)-1]
+	if last == nil || last.Role != schema.User {
+		return false
+	}
+	return strings.TrimSpace(last.Content) == want
 }
 
-// appendUserMessageIfNeeded 在 history 轨迹之后追加本轮 user 消息（仅当轨迹中尚未包含该句）。
+// appendUserMessageIfNeeded 在 history 轨迹之后追加本轮 user 消息（仅当尾部已是相同 user 句）。
 func appendUserMessageIfNeeded(msgs []adk.Message, userMessage string) []adk.Message {
 	if strings.TrimSpace(userMessage) == "" || adkMessagesHasUserContent(msgs, userMessage) {
 		return msgs
