@@ -184,6 +184,7 @@ func RunEinoSingleChatModelAgent(
 		Name:          einoSingleAgentName,
 		Description:   "Eino ADK ChatModelAgent with MCP tools for authorized security testing.",
 		Instruction:   ins,
+		GenModelInput: literalInstructionGenModelInput,
 		Model:         mainModel,
 		ToolsConfig:   mainToolsCfg,
 		MaxIterations: maxIter,

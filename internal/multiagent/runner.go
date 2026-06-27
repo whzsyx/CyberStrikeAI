@@ -254,10 +254,11 @@ func RunDeepAgent(
 				)
 			}
 			sa, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
-				Name:        id,
-				Description: desc,
-				Instruction: subInstrFinal,
-				Model:       subModel,
+				Name:          id,
+				Description:   desc,
+				Instruction:   subInstrFinal,
+				GenModelInput: literalInstructionGenModelInput,
+				Model:         subModel,
 				ToolsConfig: adk.ToolsConfig{
 					ToolsNodeConfig: compose.ToolsNodeConfig{
 						Tools:               subToolsForCfg,
@@ -479,6 +480,7 @@ func RunDeepAgent(
 			Name:          orchestratorName,
 			Description:   orchDescription,
 			Instruction:   supInstr,
+			GenModelInput: literalInstructionGenModelInput,
 			Model:         mainModel,
 			ToolsConfig:   mainToolsCfg,
 			MaxIterations: deepMaxIter,
