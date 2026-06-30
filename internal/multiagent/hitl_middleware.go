@@ -75,7 +75,7 @@ func hitlInvokableToolCallMiddleware() compose.InvokableToolMiddleware {
 					if err != nil {
 						if IsHumanRejectError(err) {
 							// Human rejection should be a soft tool result so the model can continue iterating.
-							msg := fmt.Sprintf("[HITL Reject] Tool '%s' was rejected by human reviewer. Reason: %s\nPlease adjust parameters/plan and continue without this call.",
+							msg := fmt.Sprintf("[HITL Reject] Tool '%s' was rejected by reviewer. Reason: %s\nPlease adjust parameters/plan and continue without this call.",
 								input.Name, strings.TrimSpace(err.Error()))
 							// transfer_to_agent 在 Eino 中标记为 returnDirectly：工具成功后 ReAct 子图会直接 END，
 							// 并依赖真实工具内的 SendToolGenAction 触发移交。HITL 拒绝时不会执行真实工具，
@@ -103,7 +103,7 @@ func hitlStreamableToolCallMiddleware() compose.StreamableToolMiddleware {
 					edited, err := fn(ctx, input.Name, input.Arguments)
 					if err != nil {
 						if IsHumanRejectError(err) {
-							msg := fmt.Sprintf("[HITL Reject] Tool '%s' was rejected by human reviewer. Reason: %s\nPlease adjust parameters/plan and continue without this call.",
+							msg := fmt.Sprintf("[HITL Reject] Tool '%s' was rejected by reviewer. Reason: %s\nPlease adjust parameters/plan and continue without this call.",
 								input.Name, strings.TrimSpace(err.Error()))
 							hitlClearReturnDirectlyIfTransfer(ctx, input.Name)
 							return &compose.StreamToolOutput{
