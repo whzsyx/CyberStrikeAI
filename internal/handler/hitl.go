@@ -423,9 +423,10 @@ func (m *HITLManager) waitDecision(ctx context.Context, p *pendingInterrupt, tim
 			d.Decision, d.Comment, time.Now(), p.InterruptID)
 		return d, nil
 	case <-timeoutCh:
-		_, _ = m.db.Exec(`UPDATE hitl_interrupts SET status='timeout', decision='approve', decision_comment='timeout auto approve', decided_at=?, decided_by='system' WHERE id=?`,
-			time.Now(), p.InterruptID)
-		return hitlDecision{Decision: "approve", Comment: "timeout auto approve"}, nil
+		comment := "HITL timeout auto-reject for safety"
+		_, _ = m.db.Exec(`UPDATE hitl_interrupts SET status='timeout', decision='reject', decision_comment=?, decided_at=?, decided_by='system' WHERE id=?`,
+			comment, time.Now(), p.InterruptID)
+		return hitlDecision{Decision: "reject", Comment: comment}, nil
 	case <-ctx.Done():
 		_, _ = m.db.Exec(`UPDATE hitl_interrupts SET status='cancelled', decision='reject', decision_comment='task cancelled', decided_at=?, decided_by='system' WHERE id=?`,
 			time.Now(), p.InterruptID)
@@ -530,8 +531,12 @@ func (h *AgentHandler) waitHITLApproval(runCtx context.Context, cancelRun contex
 		return nil, waitErr
 	}
 	if d.Decision == "reject" {
+		rejectMsg := "人工拒绝本次工具调用，模型将基于反馈继续迭代"
+		if strings.Contains(strings.ToLower(strings.TrimSpace(d.Comment)), "timeout") {
+			rejectMsg = "审批超时，安全起见已自动拒绝，模型将基于反馈继续迭代"
+		}
 		if sendEventFunc != nil {
-			sendEventFunc("hitl_rejected", "人工拒绝本次工具调用，模型将基于反馈继续迭代", map[string]interface{}{
+			sendEventFunc("hitl_rejected", rejectMsg, map[string]interface{}{
 				"conversationId": conversationID,
 				"interruptId":    p.InterruptID,
 				"toolName":       toolName,
