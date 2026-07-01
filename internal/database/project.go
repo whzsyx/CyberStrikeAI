@@ -111,19 +111,43 @@ func (db *DB) GetProject(id string) (*Project, error) {
 	return &p, nil
 }
 
-// CountProjects 统计项目数量。
-func (db *DB) CountProjects(status, search string) (int, error) {
-	query := `SELECT COUNT(*) FROM projects WHERE 1=1`
-	args := []interface{}{}
+func projectListSearchPattern(q string) string {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteByte('%')
+	for _, r := range q {
+		switch r {
+		case '%', '_', '\\':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('%')
+	return b.String()
+}
+
+func appendProjectListFilters(query string, args []interface{}, status, search string) (string, []interface{}) {
 	if s := strings.TrimSpace(status); s != "" {
 		query += " AND status = ?"
 		args = append(args, s)
 	}
-	if q := strings.TrimSpace(search); q != "" {
-		pattern := "%" + q + "%"
-		query += " AND (name LIKE ? OR COALESCE(description,'') LIKE ?)"
-		args = append(args, pattern, pattern)
+	if pattern := projectListSearchPattern(search); pattern != "" {
+		query += ` AND (LOWER(name) LIKE LOWER(?) ESCAPE '\' OR LOWER(COALESCE(description,'')) LIKE LOWER(?) ESCAPE '\' OR LOWER(id) LIKE LOWER(?) ESCAPE '\')`
+		args = append(args, pattern, pattern, pattern)
 	}
+	return query, args
+}
+
+// CountProjects 统计项目数量。
+func (db *DB) CountProjects(status, search string) (int, error) {
+	query := `SELECT COUNT(*) FROM projects WHERE 1=1`
+	args := []interface{}{}
+	query, args = appendProjectListFilters(query, args, status, search)
 	var count int
 	if err := db.QueryRow(query, args...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("统计项目失败: %w", err)
@@ -139,15 +163,7 @@ func (db *DB) ListProjects(status, search string, limit, offset int) ([]*Project
 	query := `SELECT id, name, COALESCE(description,''), COALESCE(scope_json,''), status, pinned, created_at, updated_at
 		FROM projects WHERE 1=1`
 	args := []interface{}{}
-	if s := strings.TrimSpace(status); s != "" {
-		query += " AND status = ?"
-		args = append(args, s)
-	}
-	if q := strings.TrimSpace(search); q != "" {
-		pattern := "%" + q + "%"
-		query += " AND (name LIKE ? OR COALESCE(description,'') LIKE ?)"
-		args = append(args, pattern, pattern)
-	}
+	query, args = appendProjectListFilters(query, args, status, search)
 	query += " ORDER BY pinned DESC, updated_at DESC LIMIT ? OFFSET ?"
 	args = append(args, limit, offset)
 
