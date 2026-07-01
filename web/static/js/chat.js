@@ -6166,52 +6166,222 @@ const CONVERSATION_PROJECT_FILTER_NONE = '__none__';
 const CONVERSATION_PROJECT_FILTER_SELECT_ID = 'conversation-project-filter';
 const CONVERSATION_PROJECT_FILTER_CARET = '<svg class="conversation-project-filter-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const BATCH_PROJECT_FILTER_SELECT_ID = 'batch-project-filter';
+const PROJECT_FILTER_REMOTE_SEARCH_LIMIT = 50;
+const PROJECT_FILTER_REMOTE_INITIAL_LIMIT = 20;
+const PROJECT_FILTER_REMOTE_DEBOUNCE_MS = 300;
 const projectFilterCustomSelectRegistry = {};
 let projectFilterCustomSelectDocBound = false;
+
+function projectFilterT(key, fallback) {
+    if (typeof window.t === 'function') {
+        const value = window.t(key);
+        if (value && value !== key) return value;
+    }
+    return fallback;
+}
 
 function closeProjectFilterCustomSelect(selectId) {
     const reg = projectFilterCustomSelectRegistry[selectId];
     if (!reg || !reg.wrapper) return;
     reg.wrapper.classList.remove('open');
     if (reg.trigger) reg.trigger.setAttribute('aria-expanded', 'false');
+    if (reg.remoteSearchTimer) {
+        clearTimeout(reg.remoteSearchTimer);
+        reg.remoteSearchTimer = null;
+    }
+    reg.remoteSearchSeq = (reg.remoteSearchSeq || 0) + 1;
+    if (reg.searchInput) reg.searchInput.value = '';
 }
 
 function closeAllProjectFilterCustomSelects() {
     Object.keys(projectFilterCustomSelectRegistry).forEach(closeProjectFilterCustomSelect);
 }
 
+function ensureProjectFilterSearchUi(reg) {
+    if (reg.searchInput && reg.optionsList) return;
+    const { dropdown } = reg;
+    dropdown.innerHTML = '';
+
+    const searchWrap = document.createElement('div');
+    searchWrap.className = 'conversation-project-filter-search';
+    const searchInput = document.createElement('input');
+    searchInput.type = 'search';
+    searchInput.className = 'conversation-project-filter-search-input';
+    searchInput.setAttribute('autocomplete', 'off');
+    searchInput.setAttribute('data-i18n', 'chat.filterProjectSearch');
+    searchInput.setAttribute('data-i18n-attr', 'placeholder');
+    searchInput.placeholder = projectFilterT('chat.filterProjectSearch', '搜索项目…');
+    searchWrap.appendChild(searchInput);
+    dropdown.appendChild(searchWrap);
+    reg.searchInput = searchInput;
+
+    const optionsList = document.createElement('div');
+    optionsList.className = 'conversation-project-filter-options';
+    dropdown.appendChild(optionsList);
+    reg.optionsList = optionsList;
+    reg.remoteSearchSeq = 0;
+    reg.remoteSearchTimer = null;
+
+    searchInput.addEventListener('input', () => scheduleProjectFilterRemoteSearch(reg.select.id));
+    searchInput.addEventListener('click', (e) => e.stopPropagation());
+    searchInput.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Escape') closeProjectFilterCustomSelect(reg.select.id);
+    });
+}
+
+function createProjectFilterOptionButton(value, label, selectedValue) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'conversation-project-filter-option';
+    item.setAttribute('role', 'option');
+    item.setAttribute('data-value', value);
+    item.title = label;
+    if (value === selectedValue) {
+        item.classList.add('is-selected');
+        item.setAttribute('aria-selected', 'true');
+    } else {
+        item.setAttribute('aria-selected', 'false');
+    }
+    const check = document.createElement('span');
+    check.className = 'conversation-project-filter-check';
+    check.setAttribute('aria-hidden', 'true');
+    check.textContent = '✓';
+    const labelEl = document.createElement('span');
+    labelEl.className = 'conversation-project-filter-option-label';
+    labelEl.textContent = label;
+    labelEl.title = label;
+    item.appendChild(check);
+    item.appendChild(labelEl);
+    return item;
+}
+
+function appendProjectFilterStatusMessage(optionsList, className, text) {
+    const el = document.createElement('div');
+    el.className = className;
+    el.textContent = text;
+    optionsList.appendChild(el);
+    return el;
+}
+
+function renderProjectFilterPinnedOptions(reg) {
+    const { select, optionsList } = reg;
+    optionsList.innerHTML = '';
+    Array.prototype.forEach.call(select.options, (opt) => {
+        if (opt.value === '' || opt.value === CONVERSATION_PROJECT_FILTER_NONE) {
+            optionsList.appendChild(createProjectFilterOptionButton(opt.value, opt.textContent || '', select.value));
+        }
+    });
+}
+
+function ensureNativeProjectFilterOption(select, projectId, label) {
+    if (!projectId || projectId === CONVERSATION_PROJECT_FILTER_NONE) return;
+    if (Array.prototype.some.call(select.options, (opt) => opt.value === projectId)) return;
+    const opt = document.createElement('option');
+    opt.value = projectId;
+    opt.textContent = label || projectId;
+    select.appendChild(opt);
+}
+
+function scheduleProjectFilterRemoteSearch(selectId) {
+    const reg = projectFilterCustomSelectRegistry[selectId];
+    if (!reg) return;
+    if (reg.remoteSearchTimer) clearTimeout(reg.remoteSearchTimer);
+    reg.remoteSearchTimer = setTimeout(() => {
+        reg.remoteSearchTimer = null;
+        loadProjectFilterRemoteOptions(selectId);
+    }, PROJECT_FILTER_REMOTE_DEBOUNCE_MS);
+}
+
+async function queryProjectFilterRemote(query, limit) {
+    if (typeof window.searchActiveProjects === 'function') {
+        return window.searchActiveProjects(query, { limit });
+    }
+    const params = new URLSearchParams({ status: 'active', limit: String(limit) });
+    const q = String(query || '').trim();
+    if (q) params.set('search', q);
+    const res = await apiFetch(`/api/projects?${params}`);
+    if (!res.ok) throw new Error('search failed');
+    const data = await res.json();
+    const items = data.projects || data.items || (Array.isArray(data) ? data : []);
+    if (typeof window.rememberProjectsInNameMap === 'function') {
+        window.rememberProjectsInNameMap(items);
+    }
+    return {
+        items,
+        total: typeof data.total === 'number' ? data.total : items.length,
+    };
+}
+
+async function loadProjectFilterRemoteOptions(selectId) {
+    const reg = projectFilterCustomSelectRegistry[selectId];
+    if (!reg || !reg.optionsList) return;
+    const query = (reg.searchInput?.value || '').trim();
+    const seq = ++reg.remoteSearchSeq;
+
+    renderProjectFilterPinnedOptions(reg);
+    const loadingEl = appendProjectFilterStatusMessage(
+        reg.optionsList,
+        'conversation-project-filter-status',
+        projectFilterT('chat.filterProjectSearchLoading', '搜索中…')
+    );
+
+    try {
+        const parsed = await queryProjectFilterRemote(
+            query,
+            query ? PROJECT_FILTER_REMOTE_SEARCH_LIMIT : PROJECT_FILTER_REMOTE_INITIAL_LIMIT
+        );
+        if (seq !== reg.remoteSearchSeq) return;
+
+        renderProjectFilterPinnedOptions(reg);
+        const selected = reg.select.value;
+        const pinnedValues = new Set(['', CONVERSATION_PROJECT_FILTER_NONE]);
+        const projects = (parsed.items || []).filter((p) => p && p.id && p.status !== 'archived');
+        projects.forEach((p) => {
+            if (pinnedValues.has(p.id)) return;
+            reg.optionsList.appendChild(
+                createProjectFilterOptionButton(p.id, p.name || p.id, selected)
+            );
+        });
+
+        if (query && projects.length === 0) {
+            appendProjectFilterStatusMessage(
+                reg.optionsList,
+                'conversation-project-filter-empty',
+                projectFilterT('chat.filterProjectSearchEmpty', '没有匹配的项目')
+            );
+        } else if (!query && parsed.total > projects.length) {
+            appendProjectFilterStatusMessage(
+                reg.optionsList,
+                'conversation-project-filter-hint',
+                projectFilterT('chat.filterProjectSearchMore', '更多项目请输入关键字搜索')
+            );
+        } else if (!query && projects.length === 0) {
+            appendProjectFilterStatusMessage(
+                reg.optionsList,
+                'conversation-project-filter-hint',
+                projectFilterT('chat.filterProjectSearchHint', '输入关键字搜索项目')
+            );
+        }
+    } catch (e) {
+        if (seq !== reg.remoteSearchSeq) return;
+        renderProjectFilterPinnedOptions(reg);
+        appendProjectFilterStatusMessage(
+            reg.optionsList,
+            'conversation-project-filter-empty',
+            projectFilterT('chat.filterProjectSearchFailed', '加载项目失败，请重试')
+        );
+    } finally {
+        if (loadingEl && loadingEl.parentNode) loadingEl.remove();
+    }
+}
+
 function syncProjectFilterCustomSelect(selectId) {
     const reg = projectFilterCustomSelectRegistry[selectId];
     if (!reg) return;
-    const { select, dropdown, trigger } = reg;
+    ensureProjectFilterSearchUi(reg);
+    const { select, trigger } = reg;
     const valueSpan = trigger.querySelector('.conversation-project-filter-value');
-    dropdown.innerHTML = '';
-    Array.prototype.forEach.call(select.options, (opt) => {
-        const item = document.createElement('button');
-        item.type = 'button';
-        item.className = 'conversation-project-filter-option';
-        item.setAttribute('role', 'option');
-        item.setAttribute('data-value', opt.value);
-        const labelText = opt.textContent || '';
-        item.title = labelText;
-        if (opt.value === select.value) {
-            item.classList.add('is-selected');
-            item.setAttribute('aria-selected', 'true');
-        } else {
-            item.setAttribute('aria-selected', 'false');
-        }
-        const check = document.createElement('span');
-        check.className = 'conversation-project-filter-check';
-        check.setAttribute('aria-hidden', 'true');
-        check.textContent = '✓';
-        const label = document.createElement('span');
-        label.className = 'conversation-project-filter-option-label';
-        label.textContent = labelText;
-        label.title = labelText;
-        item.appendChild(check);
-        item.appendChild(label);
-        dropdown.appendChild(item);
-    });
     const selectedOpt = select.options[select.selectedIndex];
     const selectedText = selectedOpt ? (selectedOpt.textContent || '') : '';
     if (valueSpan) {
@@ -6264,6 +6434,13 @@ function initProjectFilterCustomSelect(selectId) {
         if (!open) {
             wrapper.classList.add('open');
             trigger.setAttribute('aria-expanded', 'true');
+            ensureProjectFilterSearchUi(projectFilterCustomSelectRegistry[selectId]);
+            const reg = projectFilterCustomSelectRegistry[selectId];
+            if (reg?.searchInput) {
+                reg.searchInput.value = '';
+                loadProjectFilterRemoteOptions(selectId);
+                requestAnimationFrame(() => reg.searchInput.focus());
+            }
         }
     });
 
@@ -6273,6 +6450,8 @@ function initProjectFilterCustomSelect(selectId) {
         e.stopPropagation();
         const val = opt.getAttribute('data-value');
         if (val === null) return;
+        const label = opt.querySelector('.conversation-project-filter-option-label')?.textContent || val;
+        ensureNativeProjectFilterOption(select, val, label);
         if (select.value !== val) {
             select.value = val;
             select.dispatchEvent(new Event('change', { bubbles: true }));
@@ -6319,38 +6498,7 @@ function setConversationProjectFilter(projectId) {
     updateConversationSidebarFilterUI();
 }
 
-function isValidConversationProjectFilter(projectId) {
-    if (!projectId) return true;
-    if (projectId === CONVERSATION_PROJECT_FILTER_NONE) return true;
-    const map = window.projectNameById;
-    if (!map || typeof map !== 'object') return true;
-    return Object.prototype.hasOwnProperty.call(map, projectId);
-}
-
-async function refreshConversationProjectFilter() {
-    const sel = document.getElementById('conversation-project-filter');
-    if (!sel) return;
-    const saved = getConversationProjectFilter();
-    let projects = [];
-    if (typeof window.ensureProjectsLoaded === 'function') {
-        try {
-            const list = await window.ensureProjectsLoaded();
-            projects = (list || []).filter((p) => p && p.id && p.status !== 'archived');
-        } catch (e) { /* ignore */ }
-    }
-    if (!projects.length) {
-        try {
-            const res = await apiFetch('/api/projects?status=active&limit=200');
-            if (res.ok) {
-                const data = await res.json();
-                const items = data.projects || data.items || (Array.isArray(data) ? data : []);
-                projects = items.filter((p) => p && p.id);
-                if (typeof window.rebuildProjectNameMap === 'function') {
-                    window.rebuildProjectNameMap(items);
-                }
-            }
-        } catch (e) { /* ignore */ }
-    }
+function appendProjectFilterPinnedNativeOptions(sel) {
     const tFn = typeof window.t === 'function' ? window.t.bind(window) : null;
     const allLabel = tFn ? tFn('chat.filterAllProjects') : '全部项目';
     const unboundLabel = tFn ? tFn('chat.filterUnboundProjects') : '未绑定项目';
@@ -6365,16 +6513,44 @@ async function refreshConversationProjectFilter() {
     unboundOpt.textContent = unboundLabel;
     unboundOpt.setAttribute('data-i18n', 'chat.filterUnboundProjects');
     sel.appendChild(unboundOpt);
-    projects
-        .slice()
-        .sort((a, b) => (a.name || a.id || '').localeCompare(b.name || b.id || '', undefined, { sensitivity: 'base' }))
-        .forEach((p) => {
-            const opt = document.createElement('option');
-            opt.value = p.id;
-            opt.textContent = p.name || p.id;
-            sel.appendChild(opt);
-        });
-    const normalized = isValidConversationProjectFilter(saved) ? saved : '';
+}
+
+async function resolveProjectFilterSelection(projectId) {
+    const saved = (projectId || '').trim();
+    if (!saved || saved === CONVERSATION_PROJECT_FILTER_NONE) return saved;
+    const fetchSummary = typeof window.fetchProjectSummary === 'function'
+        ? window.fetchProjectSummary
+        : null;
+    if (!fetchSummary) return saved;
+    const project = await fetchSummary(saved);
+    if (!project || !project.id || project.status === 'archived') return '';
+    return project.id;
+}
+
+async function appendSelectedProjectFilterOption(sel, projectId) {
+    const id = (projectId || '').trim();
+    if (!id || id === CONVERSATION_PROJECT_FILTER_NONE) return;
+    if (Array.prototype.some.call(sel.options, (opt) => opt.value === id)) return;
+    const fetchSummary = typeof window.fetchProjectSummary === 'function'
+        ? window.fetchProjectSummary
+        : null;
+    const project = fetchSummary ? await fetchSummary(id) : null;
+    const label = (project && (project.name || project.id)) || (window.projectNameById && window.projectNameById[id]) || id;
+    const opt = document.createElement('option');
+    opt.value = id;
+    opt.textContent = label;
+    sel.appendChild(opt);
+}
+
+async function refreshConversationProjectFilter() {
+    const sel = document.getElementById('conversation-project-filter');
+    if (!sel) return;
+    const saved = getConversationProjectFilter();
+    appendProjectFilterPinnedNativeOptions(sel);
+    const normalized = await resolveProjectFilterSelection(saved);
+    if (normalized && normalized !== CONVERSATION_PROJECT_FILTER_NONE) {
+        await appendSelectedProjectFilterOption(sel, normalized);
+    }
     if (normalized !== saved) setConversationProjectFilter(normalized);
     sel.value = normalized;
     syncConversationProjectCustomSelect();
@@ -8256,40 +8432,12 @@ async function refreshBatchProjectFilter() {
     const sel = document.getElementById('batch-project-filter');
     if (!sel) return;
     const saved = sel.value || '';
-    if (typeof window.ensureProjectsLoaded === 'function') {
-        try {
-            await window.ensureProjectsLoaded();
-        } catch (e) { /* ignore */ }
+    appendProjectFilterPinnedNativeOptions(sel);
+    const normalized = await resolveProjectFilterSelection(saved);
+    if (normalized && normalized !== CONVERSATION_PROJECT_FILTER_NONE) {
+        await appendSelectedProjectFilterOption(sel, normalized);
     }
-    const tFn = typeof window.t === 'function' ? window.t.bind(window) : null;
-    const allLabel = tFn ? tFn('chat.filterAllProjects') : '全部项目';
-    const unboundLabel = tFn ? tFn('chat.filterUnboundProjects') : '未绑定项目';
-    sel.innerHTML = '';
-    const allOpt = document.createElement('option');
-    allOpt.value = '';
-    allOpt.textContent = allLabel;
-    allOpt.setAttribute('data-i18n', 'chat.filterAllProjects');
-    sel.appendChild(allOpt);
-    const unboundOpt = document.createElement('option');
-    unboundOpt.value = CONVERSATION_PROJECT_FILTER_NONE;
-    unboundOpt.textContent = unboundLabel;
-    unboundOpt.setAttribute('data-i18n', 'chat.filterUnboundProjects');
-    sel.appendChild(unboundOpt);
-    const source = window.projectNameById ? Object.keys(window.projectNameById) : [];
-    source
-        .sort((a, b) => {
-            const na = (window.projectNameById[a] || a).toLowerCase();
-            const nb = (window.projectNameById[b] || b).toLowerCase();
-            return na.localeCompare(nb);
-        })
-        .forEach((id) => {
-            const opt = document.createElement('option');
-            opt.value = id;
-            opt.textContent = window.projectNameById[id] || id;
-            sel.appendChild(opt);
-        });
-    const valid = !saved || saved === CONVERSATION_PROJECT_FILTER_NONE || (window.projectNameById && window.projectNameById[saved]);
-    sel.value = valid ? saved : '';
+    sel.value = normalized;
     syncProjectFilterCustomSelect(BATCH_PROJECT_FILTER_SELECT_ID);
 }
 

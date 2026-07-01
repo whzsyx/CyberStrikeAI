@@ -173,6 +173,39 @@ function rebuildProjectNameMap(list) {
     });
 }
 
+function rememberProjectsInNameMap(list) {
+    (list || []).forEach((p) => {
+        if (p && p.id) projectNameById[p.id] = p.name || p.id;
+    });
+}
+
+const PROJECT_PICKER_SEARCH_LIMIT = 50;
+const PROJECT_PICKER_INITIAL_LIMIT = 20;
+
+async function searchActiveProjects(query, opts = {}) {
+    const params = new URLSearchParams();
+    params.set('status', opts.status || 'active');
+    params.set('limit', String(opts.limit ?? (String(query || '').trim() ? PROJECT_PICKER_SEARCH_LIMIT : PROJECT_PICKER_INITIAL_LIMIT)));
+    params.set('offset', String(opts.offset ?? 0));
+    const q = String(query || '').trim();
+    if (q) params.set('search', q);
+    const res = await apiFetch(`/api/projects?${params}`);
+    if (!res.ok) throw new Error(tp('projects.loadProjectsFailed'));
+    const parsed = parseProjectsListResponse(await res.json());
+    rememberProjectsInNameMap(parsed.items);
+    return parsed;
+}
+
+async function fetchProjectSummary(projectId) {
+    const id = String(projectId || '').trim();
+    if (!id) return null;
+    const res = await apiFetch(`/api/projects/${encodeURIComponent(id)}`);
+    if (!res.ok) return null;
+    const project = await res.json();
+    if (project && project.id) rememberProjectsInNameMap([project]);
+    return project;
+}
+
 function getProjectsListPageSize() {
     try {
         const saved = parseInt(localStorage.getItem(PROJECTS_LIST_PAGE_SIZE_KEY), 10);
@@ -309,7 +342,10 @@ async function ensureProjectsLoaded(force) {
 }
 
 function prefetchProjectsForChat() {
-    ensureProjectsLoaded().catch(() => {});
+    const id = (resolveChatProjectSelection() || '').trim();
+    if (id && !projectNameById[id]) {
+        fetchProjectSummary(id).catch(() => {});
+    }
 }
 
 /** 新对话时默认不绑定项目；用户需主动选择后才写入共享黑板 */
@@ -2032,27 +2068,20 @@ function getChatProjectSelection() {
     return getActiveProjectId();
 }
 
-function isActiveChatProjectId(id) {
-    if (!id) return false;
-    const source = projectsCacheAll.length ? projectsCacheAll : projectsCache;
-    return source.some((p) => p.id === id && p.status !== 'archived');
-}
-
-/** 用于 UI：无效/已删除/无可用项目时视为未绑定 */
+/** 用于 UI：返回当前选中的项目 ID（有效性由 normalizeStaleChatProjectSelection 异步校验） */
 function resolveChatProjectSelection() {
-    const raw = getChatProjectSelection();
-    if (!raw) return '';
-    if (!_projectsListReady) return raw;
-    return isActiveChatProjectId(raw) ? raw : '';
+    return getChatProjectSelection() || '';
 }
 
 let _normalizingStaleProject = false;
 
-/** 项目列表加载后，清除 localStorage 或对话上残留的失效项目 ID */
+/** 清除 localStorage 或对话上残留的失效项目 ID */
 async function normalizeStaleChatProjectSelection() {
-    if (!_projectsListReady || _normalizingStaleProject) return;
-    const raw = getChatProjectSelection();
-    if (!raw || isActiveChatProjectId(raw)) return;
+    if (_normalizingStaleProject) return;
+    const raw = (getChatProjectSelection() || '').trim();
+    if (!raw) return;
+    const project = await fetchProjectSummary(raw);
+    if (project && project.id && project.status !== 'archived') return;
 
     _normalizingStaleProject = true;
     try {
@@ -2079,6 +2108,175 @@ async function normalizeStaleChatProjectSelection() {
     }
 }
 
+const PROJECT_PICKER_DEBOUNCE_MS = 300;
+const projectPickerPanelState = {
+    chat: { seq: 0, timer: null },
+    webshell: { seq: 0, timer: null },
+};
+
+function appendChatProjectPanelItem(list, project, selectedId, onSelect, tFn) {
+    const t = tFn || tp;
+    const isNone = !project.id;
+    const isSelected = isNone ? !selectedId : selectedId === project.id;
+    const desc = isNone
+        ? (project.description || '')
+        : (project.description || '').trim().slice(0, 80) || t('projects.sharedFactBoard');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'role-selection-item-main' + (isSelected ? ' selected' : '');
+    btn.setAttribute('role', 'option');
+    btn.onclick = () => onSelect(project.id || '');
+    btn.innerHTML = `
+        <div class="role-selection-item-icon-main">${isNone ? '—' : '📁'}</div>
+        <div class="role-selection-item-content-main">
+            <div class="role-selection-item-name-main">${escapeHtml(project.name || t('common.untitled'))}</div>
+            <div class="role-selection-item-description-main">${escapeHtml(desc)}</div>
+        </div>
+        ${isSelected ? '<div class="role-selection-checkmark-main">✓</div>' : ''}
+    `;
+    list.appendChild(btn);
+}
+
+function appendChatProjectPanelMessage(list, className, text) {
+    const el = document.createElement('div');
+    el.className = className;
+    el.textContent = text;
+    list.appendChild(el);
+    return el;
+}
+
+function pickerMessage(t, key, fallback) {
+    const value = t(key);
+    if (!value || value === key) return fallback;
+    return value;
+}
+
+async function renderProjectPickerPanel(panelKey, config) {
+    const state = projectPickerPanelState[panelKey];
+    const list = document.getElementById(config.listId);
+    if (!list || !state) return;
+    const query = (document.getElementById(config.searchInputId)?.value || '').trim();
+    const seq = ++state.seq;
+    const selectedId = config.getSelectedId();
+    const t = config.t || tp;
+
+    const renderPinned = () => {
+        appendChatProjectPanelItem(
+            list,
+            {
+                id: '',
+                name: t('projects.noProject'),
+                description: t('projects.noProjectDescription'),
+            },
+            selectedId,
+            config.onSelect,
+            t
+        );
+    };
+
+    list.innerHTML = '';
+    renderPinned();
+    const loadingEl = appendChatProjectPanelMessage(
+        list,
+        'chat-project-panel-loading',
+        pickerMessage(t, 'common.loading', '加载中…')
+    );
+
+    try {
+        const parsed = await searchActiveProjects(query, {
+            limit: query ? PROJECT_PICKER_SEARCH_LIMIT : PROJECT_PICKER_INITIAL_LIMIT,
+        });
+        if (seq !== state.seq) return;
+
+        list.innerHTML = '';
+        renderPinned();
+        const projects = (parsed.items || []).filter((p) => p && p.id && p.status !== 'archived');
+        projects.forEach((p) => {
+            appendChatProjectPanelItem(list, p, selectedId, config.onSelect, t);
+        });
+
+        if (query && projects.length === 0) {
+            appendChatProjectPanelMessage(
+                list,
+                'chat-project-panel-empty',
+                pickerMessage(t, 'chat.filterProjectSearchEmpty', '没有匹配的项目')
+            );
+        } else if (!query && parsed.total > projects.length) {
+            appendChatProjectPanelMessage(
+                list,
+                'chat-project-panel-hint',
+                pickerMessage(t, 'chat.filterProjectSearchMore', '更多项目请输入关键字搜索')
+            );
+        }
+    } catch (e) {
+        if (seq !== state.seq) return;
+        list.innerHTML = '';
+        renderPinned();
+        appendChatProjectPanelMessage(
+            list,
+            'chat-project-panel-empty',
+            pickerMessage(t, 'chat.filterProjectSearchFailed', '加载项目失败，请重试')
+        );
+    } finally {
+        if (loadingEl.parentNode) loadingEl.remove();
+    }
+}
+
+function initProjectPickerPanelSearch(panelKey, searchInputId, onSearch) {
+    const input = document.getElementById(searchInputId);
+    if (!input || input.dataset.pickerBound === panelKey) return;
+    input.dataset.pickerBound = panelKey;
+    input.addEventListener('input', onSearch);
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            if (panelKey === 'chat' && typeof closeChatProjectPanel === 'function') {
+                closeChatProjectPanel();
+            } else if (panelKey === 'webshell' && typeof wsCloseProjectPanel === 'function') {
+                wsCloseProjectPanel();
+            }
+        }
+    });
+}
+
+function clearProjectPickerPanelSearch(panelKey, searchInputId) {
+    const state = projectPickerPanelState[panelKey];
+    if (!state) return;
+    state.seq += 1;
+    if (state.timer) {
+        clearTimeout(state.timer);
+        state.timer = null;
+    }
+    const input = document.getElementById(searchInputId);
+    if (input) input.value = '';
+}
+
+function scheduleProjectPickerPanelSearch(panelKey, loadFn) {
+    const state = projectPickerPanelState[panelKey];
+    if (!state) return;
+    if (state.timer) clearTimeout(state.timer);
+    state.timer = setTimeout(() => {
+        state.timer = null;
+        loadFn();
+    }, PROJECT_PICKER_DEBOUNCE_MS);
+}
+
+async function loadChatProjectPanelList() {
+    await renderProjectPickerPanel('chat', {
+        listId: 'chat-project-list',
+        searchInputId: 'chat-project-search',
+        getSelectedId: resolveChatProjectSelection,
+        onSelect: (projectId) => selectChatProject(projectId),
+    });
+}
+
+async function ensureChatProjectButtonLabel() {
+    const id = (resolveChatProjectSelection() || '').trim();
+    if (id && !projectNameById[id]) {
+        await fetchProjectSummary(id);
+    }
+    updateChatProjectButtonLabel();
+}
+
 function updateChatProjectButtonLabel() {
     const textEl = document.getElementById('chat-project-text');
     if (!textEl) return;
@@ -2086,56 +2284,13 @@ function updateChatProjectButtonLabel() {
     textEl.textContent = id && projectNameById[id] ? projectNameById[id] : tp('projects.noProject');
 }
 
-function renderChatProjectPanelList() {
-    const list = document.getElementById('chat-project-list');
-    if (!list) return;
-    const selected = resolveChatProjectSelection();
-    const source = projectsCacheAll.length ? projectsCacheAll : projectsCache;
-    const activeProjects = source.filter((p) => p.status !== 'archived');
-    const items = [{ id: '', name: tp('projects.noProject'), description: tp('projects.noProjectDescription') }, ...activeProjects];
-    if (!items.length) {
-        list.innerHTML = `<div class="chat-project-panel-empty">${escapeHtml(tp('projects.noProjectsClickCreate'))}</div>`;
-        return;
-    }
-    list.innerHTML = '';
-    items.forEach((p) => {
-        const isNone = !p.id;
-        const isSelected = isNone ? !selected : selected === p.id;
-        const desc = isNone
-            ? (p.description || '')
-            : (p.description || '').trim().slice(0, 80) || tp('projects.sharedFactBoard');
-        const projectId = p.id || '';
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'role-selection-item-main' + (isSelected ? ' selected' : '');
-        btn.setAttribute('role', 'option');
-        btn.onclick = () => {
-            selectChatProject(projectId);
-        };
-        btn.innerHTML = `
-                <div class="role-selection-item-icon-main">${isNone ? '—' : '📁'}</div>
-                <div class="role-selection-item-content-main">
-                    <div class="role-selection-item-name-main">${escapeHtml(p.name || tp('common.untitled'))}</div>
-                    <div class="role-selection-item-description-main">${escapeHtml(desc)}</div>
-                </div>
-                ${isSelected ? '<div class="role-selection-checkmark-main">✓</div>' : ''}
-            `;
-        list.appendChild(btn);
-    });
-}
-
 async function renderChatProjectPanel() {
-    const list = document.getElementById('chat-project-list');
-    if (!list) return;
-    list.innerHTML = `<div class="chat-project-panel-loading">${escapeHtml(tp('common.loading'))}</div>`;
-    try {
-        await ensureProjectsLoaded();
-    } catch (e) {
-        console.warn(e);
-        list.innerHTML = `<div class="chat-project-panel-empty">${escapeHtml(tp('projects.loadFailedRetry'))}</div>`;
-        return;
-    }
-    renderChatProjectPanelList();
+    initProjectPickerPanelSearch('chat', 'chat-project-search', () => {
+        scheduleProjectPickerPanelSearch('chat', () => loadChatProjectPanelList());
+    });
+    clearProjectPickerPanelSearch('chat', 'chat-project-search');
+    await loadChatProjectPanelList();
+    requestAnimationFrame(() => document.getElementById('chat-project-search')?.focus());
 }
 
 function closeChatProjectPanel() {
@@ -2146,6 +2301,7 @@ function closeChatProjectPanel() {
         btn.classList.remove('active');
         btn.setAttribute('aria-expanded', 'false');
     }
+    clearProjectPickerPanelSearch('chat', 'chat-project-search');
 }
 
 async function toggleChatProjectPanel() {
@@ -2213,15 +2369,14 @@ async function applyChatProjectSelection(projectId) {
 async function refreshChatProjectSelector() {
     if (!document.getElementById('chat-project-btn')) return;
     try {
-        await ensureProjectsLoaded();
         await normalizeStaleChatProjectSelection();
+        await ensureChatProjectButtonLabel();
     } catch (e) {
         console.warn(e);
     }
-    updateChatProjectButtonLabel();
     const panel = document.getElementById('chat-project-panel');
     if (panel && panel.style.display === 'flex') {
-        renderChatProjectPanelList();
+        await loadChatProjectPanelList();
     }
 }
 
@@ -2240,7 +2395,7 @@ function initChatProjectSelector() {
             renderProjectsPagination();
             updateChatProjectButtonLabel();
             const panel = document.getElementById('chat-project-panel');
-            if (panel && panel.style.display === 'flex') renderChatProjectPanelList();
+            if (panel && panel.style.display === 'flex') loadChatProjectPanelList();
             if (currentProjectId) {
                 refreshProjectDetailMetaI18n();
                 const source = projectsCacheAll.length ? projectsCacheAll : projectsCache;
@@ -2298,6 +2453,11 @@ window.onChatProjectChange = onChatProjectChange;
 window.toggleChatProjectPanel = toggleChatProjectPanel;
 window.closeChatProjectPanel = closeChatProjectPanel;
 window.selectChatProject = selectChatProject;
+window.renderProjectPickerPanel = renderProjectPickerPanel;
+window.initProjectPickerPanelSearch = initProjectPickerPanelSearch;
+window.clearProjectPickerPanelSearch = clearProjectPickerPanelSearch;
+window.scheduleProjectPickerPanelSearch = scheduleProjectPickerPanelSearch;
+window.loadChatProjectPanelList = loadChatProjectPanelList;
 window.prefetchProjectsForChat = prefetchProjectsForChat;
 window.ensureDefaultActiveProjectForNewChat = ensureDefaultActiveProjectForNewChat;
 window.getActiveProjectId = getActiveProjectId;
@@ -2334,5 +2494,8 @@ window.deleteProjectFactEdge = deleteProjectFactEdge;
 window.focusProjectFactGraphEdge = focusProjectFactGraphEdge;
 window.toggleProjectFactGraphConnectMode = toggleProjectFactGraphConnectMode;
 window.rebuildProjectNameMap = rebuildProjectNameMap;
+window.rememberProjectsInNameMap = rememberProjectsInNameMap;
+window.searchActiveProjects = searchActiveProjects;
+window.fetchProjectSummary = fetchProjectSummary;
 window.projectNameById = projectNameById;
 window.ensureProjectsLoaded = ensureProjectsLoaded;
