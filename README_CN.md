@@ -109,7 +109,7 @@ CyberStrikeAI 是一款 **AI 原生安全测试平台**，基于 Go 构建，集
 - 📄 大结果分页、压缩与全文检索
 - 🔗 攻击链可视化、风险打分与步骤回放
 - 🔒 Web 登录保护、审计日志、SQLite 持久化
-- 📚 知识库（RAG）：向量嵌入与余弦相似度检索（与 Eino `retriever.Retriever` 语义一致），可选 **Eino Compose** 索引流水线及检索后处理（预算、重排等配置项）
+- 📚 知识库（RAG）：**Eino MultiQuery** 查询改写 + 多路向量检索 + **HTTP 精排**（DashScope `gte-rerank` / Cohere 兼容）+ 后处理（去重、预算）；索引侧为 **Eino Compose** 流水线
 - 📁 对话分组管理：支持分组创建、置顶、重命名、删除等操作
 - 📂 **项目管理**：共享事实（黑板）跨会话沉淀认知，`upsert_project_fact` + `links` 串联攻击路径；聊天攻击链与项目事实图可视化
 - 🛡️ 漏洞管理功能：完整的漏洞 CRUD 操作，支持严重程度分级、状态流转、按对话/严重程度/状态过滤，以及统计看板
@@ -453,9 +453,10 @@ CyberStrikeAI 支持通过三种传输模式连接外部 MCP 服务器：
 
 ### 知识库功能
 - **向量检索**：AI 智能体在对话过程中可自动调用 `search_knowledge_base` 工具搜索知识库中的安全知识。
-- **向量检索**：基于嵌入余弦相似度与相似度阈值过滤（与 Eino `retriever.Retriever` 语义一致）。
-- **自动索引**：扫描 `knowledge_base/` 目录下的 Markdown 文件，自动构建向量嵌入索引。
-- **Web 管理**：通过 Web 界面创建、更新、删除知识项，支持分类管理。
+- **RAG 管线（始终启用）**：**MultiQuery**（LLM 查询改写）→ 向量预取与融合 → **HTTP 精排**（DashScope `gte-rerank` 或 Cohere 兼容 `/v1/rerank`）→ 后处理（规范化去重、字符/token 预算、最终 top_k）。精排失败时自动降级为融合排序，检索仍可用。
+- **向量相似度**：基于嵌入余弦相似度与相似度阈值过滤（与 Eino `retriever.Retriever` 语义一致）。
+- **自动索引**：扫描 `knowledge_base/` 目录下的 Markdown 文件，自动构建向量嵌入索引（Eino Markdown 标题切分 + 递归分块）。
+- **Web 管理**：通过 Web 界面创建、更新、删除知识项，支持分类管理；设置页可配置 MultiQuery / 精排 / 预取候选数。
 - **检索日志**：记录所有知识检索操作，便于审计与调试。
 
 **快速开始（使用预构建知识库）：**
@@ -477,6 +478,17 @@ CyberStrikeAI 支持通过三种传输模式连接外部 MCP 服务器：
      retrieval:
        top_k: 5
        similarity_threshold: 0.7
+       multi_query:
+         max_queries: 4        # LLM 改写变体上限（始终启用）
+       rerank:                 # 精排始终启用；留空则继承 openai/embedding 凭据
+         provider: ""          # 空=按 base_url 推断 dashscope | cohere
+         model: ""             # 空=DashScope→gte-rerank，Cohere→rerank-multilingual-v3.0
+         base_url: ""
+         api_key: ""
+       post_retrieve:
+         prefetch_top_k: 20    # 每条 MultiQuery 变体的向量候选数；0=max(top_k×4, 20)
+         max_context_chars: 0
+         max_context_tokens: 0
    ```
 2. **添加知识文件**：将 Markdown 文件放入 `knowledge_base/` 目录，按分类组织（如 `knowledge_base/SQL注入/README.md`）。
 3. **扫描索引**：在 Web 界面中点击"扫描知识库"，系统会自动导入文件并构建向量索引。
@@ -537,6 +549,17 @@ knowledge:
   retrieval:
     top_k: 5  # 检索返回的 Top-K 结果数量
     similarity_threshold: 0.7  # 余弦相似度阈值（0-1），低于此值的结果将被过滤
+    multi_query:
+      max_queries: 4  # MultiQuery 改写变体上限（始终启用）
+    rerank:  # HTTP 精排（始终启用）；留空则继承 openai/embedding 凭据
+      provider: ""
+      model: ""
+      base_url: ""
+      api_key: ""
+    post_retrieve:
+      prefetch_top_k: 20  # 每条 MultiQuery 变体；0=max(top_k×4, 20)
+      max_context_chars: 0
+      max_context_tokens: 0
 roles_dir: "roles"  # 角色配置文件目录（相对于配置文件所在目录）
 skills_dir: "skills"  # Skills 目录（相对于配置文件所在目录）
 agents_dir: "agents"  # 多代理 Markdown（主代理 orchestrator.md + 子代理 *.md）

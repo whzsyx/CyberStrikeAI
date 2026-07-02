@@ -110,7 +110,7 @@ CyberStrikeAI is an **AI-native security testing platform** built in Go. It inte
 - 📄 Large-result pagination, compression, and searchable archives
 - 🔗 Attack-chain graph, risk scoring, and step-by-step replay
 - 🔒 Password-protected web UI, audit logs, and SQLite persistence
-- 📚 Knowledge base (RAG) with embedding-based vector retrieval (cosine similarity), optional **Eino Compose** indexing pipeline, and configurable post-retrieval budgets / reranking hooks
+- 📚 Knowledge base (RAG): **Eino MultiQuery** query rewrite + multi-path vector retrieval + **HTTP rerank** (DashScope `gte-rerank` / Cohere-compatible) + post-processing (dedupe, budget); **Eino Compose** indexing pipeline
 - 📁 Conversation grouping with pinning, rename, and batch management
 - 📂 **Project management**: shared facts (blackboard) across sessions, `upsert_project_fact` + `links` to chain paths; attack-chain and project fact graph views
 - 🛡️ Vulnerability management with CRUD operations, severity tracking, status workflow, and statistics
@@ -455,9 +455,10 @@ A test SSE MCP server is available at `cmd/test-sse-mcp-server/` for validation 
 
 ### Knowledge Base
 - **Vector search** – AI agent can automatically search the knowledge base for relevant security knowledge during conversations using the `search_knowledge_base` tool.
-- **Vector retrieval** – cosine similarity over stored embeddings, aligned with Eino `retriever.Retriever` usage.
-- **Auto-indexing** – scans the `knowledge_base/` directory for Markdown files and automatically indexes them with embeddings.
-- **Web management** – create, update, delete knowledge items through the web UI, with category-based organization.
+- **RAG pipeline (always on)** – **MultiQuery** (LLM query rewrite) → vector prefetch & fusion → **HTTP rerank** (DashScope `gte-rerank` or Cohere-compatible `/v1/rerank`) → post-processing (normalized dedupe, char/token budget, final top_k). Rerank failures degrade to fusion order without breaking search.
+- **Vector retrieval** – cosine similarity over stored embeddings with configurable threshold, aligned with Eino `retriever.Retriever` usage.
+- **Auto-indexing** – scans the `knowledge_base/` directory for Markdown files and automatically indexes them with embeddings (Markdown header split + recursive chunking via Eino).
+- **Web management** – create, update, delete knowledge items through the web UI, with category-based organization; settings page exposes MultiQuery / rerank / prefetch options.
 - **Retrieval logs** – tracks all knowledge retrieval operations for audit and debugging.
 
 **Quick Start (Using Pre-built Knowledge Base):**
@@ -479,6 +480,17 @@ A test SSE MCP server is available at `cmd/test-sse-mcp-server/` for validation 
      retrieval:
        top_k: 5
        similarity_threshold: 0.7
+       multi_query:
+         max_queries: 4        # LLM rewrite variants (always on)
+       rerank:                 # always on; empty fields inherit openai/embedding credentials
+         provider: ""          # auto: dashscope | cohere from base_url
+         model: ""             # empty: gte-rerank (DashScope) or rerank-multilingual-v3.0 (Cohere)
+         base_url: ""
+         api_key: ""
+       post_retrieve:
+         prefetch_top_k: 20    # vector candidates per MultiQuery variant; 0 = max(top_k×4, 20)
+         max_context_chars: 0
+         max_context_tokens: 0
    ```
 2. **Add knowledge files** – place Markdown files in `knowledge_base/` directory, organized by category (e.g., `knowledge_base/SQL Injection/README.md`).
 3. **Scan and index** – use the web UI to scan the knowledge base directory, which will automatically import files and build vector embeddings.
@@ -539,6 +551,17 @@ knowledge:
   retrieval:
     top_k: 5  # Number of top results to return
     similarity_threshold: 0.7  # Minimum cosine similarity (0-1)
+    multi_query:
+      max_queries: 4  # MultiQuery rewrite variants (always on)
+    rerank:  # HTTP rerank (always on); empty fields inherit openai/embedding credentials
+      provider: ""
+      model: ""
+      base_url: ""
+      api_key: ""
+    post_retrieve:
+      prefetch_top_k: 20  # per MultiQuery variant; 0 = max(top_k×4, 20)
+      max_context_chars: 0
+      max_context_tokens: 0
 roles_dir: "roles"  # Role configuration directory (relative to config file)
 skills_dir: "skills"  # Skills directory (relative to config file)
 agents_dir: "agents"  # Multi-agent Markdown definitions (orchestrator + sub-agents)
