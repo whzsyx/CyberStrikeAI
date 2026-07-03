@@ -27983,6 +27983,27 @@ html[data-theme="dark"] .dashboard-empty-action:hover {
     background: var(--accent-hover);
 }
 
+html[data-theme="dark"] .dashboard-cta-block {
+    background:
+        linear-gradient(90deg, rgba(96, 165, 250, 0.14) 0%, rgba(96, 165, 250, 0.05) 22%, transparent 38%),
+        linear-gradient(145deg, #111827 0%, #172033 100%);
+    border-color: rgba(96, 165, 250, 0.22);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.32), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+}
+
+html[data-theme="dark"] .dashboard-cta-icon {
+    background: linear-gradient(135deg, rgba(96, 165, 250, 0.22) 0%, rgba(59, 130, 246, 0.14) 100%);
+    color: #60a5fa;
+}
+
+html[data-theme="dark"] .dashboard-cta-btn {
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);
+}
+
+html[data-theme="dark"] .dashboard-cta-btn:hover {
+    box-shadow: 0 8px 24px rgba(37, 99, 235, 0.5);
+}
+
 /* Chat controls are defined after the generic dark layer, so keep a final
    override here for role/agent-mode popovers and conversation pagination. */
 html[data-theme="dark"] .role-selector-btn,
