@@ -55,6 +55,45 @@
             .replace(/'/g, '&#39;');
     }
 
+    const BINDING_FROM_OPTIONS = ['previous', 'inputs', 'outputs'];
+
+    function bindingFromConfig(cfg, key, fallbackFrom, fallbackField) {
+        const b = cfg && cfg[key];
+        if (b && typeof b === 'object') {
+            return {
+                from: b.from || fallbackFrom,
+                field: b.field || fallbackField
+            };
+        }
+        return { from: fallbackFrom, field: fallbackField };
+    }
+
+    function bindingFieldHtml(prefix, labelKey, binding, hintKey) {
+        const from = binding.from || 'previous';
+        const field = binding.field || 'output';
+        const label = _t(labelKey);
+        const hint = hintKey ? _t(hintKey) : '';
+        const options = BINDING_FROM_OPTIONS.map(v =>
+            `<option value="${esc(v)}" ${v === from ? 'selected' : ''}>${esc(v)}</option>`
+        ).join('');
+        return `
+            <div class="form-group">
+                <label>${esc(label)}</label>
+                <div class="workflow-binding-row" style="display:flex;gap:8px;">
+                    <select id="${prefix}-from" onchange="updateWorkflowTypedConfig()" style="flex:1;">${options}</select>
+                    <input type="text" id="${prefix}-field" value="${esc(field)}" placeholder="output" oninput="updateWorkflowTypedConfig()" style="flex:1;">
+                </div>
+                ${hint ? '<p class="workflow-config-hint">' + hint + '</p>' : ''}
+            </div>`;
+    }
+
+    function readBinding(prefix) {
+        return {
+            from: (document.getElementById(prefix + '-from') || {}).value || 'previous',
+            field: (document.getElementById(prefix + '-field') || {}).value || 'output'
+        };
+    }
+
     function defaultGraph() {
         return { nodes: [], edges: [], config: {} };
     }
@@ -66,15 +105,15 @@
             case 'tool':
                 return { tool_name: '', arguments: '{}', timeout_seconds: '' };
             case 'agent':
-                return { agent_mode: 'eino_single', input_source: '{{previous.output}}', instruction: '', output_key: 'agent_result' };
+                return { agent_mode: 'eino_single', input_binding: { from: 'previous', field: 'output' }, instruction: '', output_key: 'agent_result' };
             case 'condition':
                 return { expression: '{{previous.output}} != ""' };
             case 'hitl':
-                return { prompt: _t('workflows.defaultHitlPrompt'), reviewer: 'human' };
+                return { prompt: _t('workflows.defaultHitlPrompt'), prompt_binding: { from: 'previous', field: 'output' }, reviewer: 'human' };
             case 'output':
-                return { output_key: 'result', source: '{{previous.output}}' };
+                return { output_key: 'result', source_binding: { from: 'previous', field: 'output' } };
             case 'end':
-                return { result_template: '{{outputs.result}}' };
+                return { result_binding: { from: 'outputs', field: 'result' } };
             default:
                 return {};
         }
@@ -453,7 +492,7 @@
                             ${workflowToolOptions.map(tool => `<option value="${esc(tool.key)}" ${tool.key === cfg.tool_name ? 'selected' : ''}>${esc(tool.key)}${tool.enabled ? '' : esc(_t('workflows.config.toolDisabled'))}</option>`).join('')}
                         </select>
                     </div>
-                    ${typedTextarea('workflow-tool-arguments', _t('workflows.config.argumentsTemplate'), cfg.arguments, '{"target":"{{inputs.target}}"}')}
+                    ${typedTextarea('workflow-tool-arguments', _t('workflows.config.argumentsStatic'), cfg.arguments, '{"target":"example.com"}')}
                     ${typedField('workflow-tool-timeout', _t('workflows.config.timeoutSeconds'), cfg.timeout_seconds, _t('workflows.config.optional'))}
                 `;
                 if (!workflowToolsLoaded) {
@@ -470,7 +509,7 @@
                             ${AGENT_MODES.map(mode => `<option value="${mode}" ${mode === cfg.agent_mode ? 'selected' : ''}>${mode}</option>`).join('')}
                         </select>
                     </div>
-                    ${typedField('workflow-agent-input-source', _t('workflows.config.inputSource'), cfg.input_source, '{{previous.output}}')}
+                    ${bindingFieldHtml('workflow-agent-input', 'workflows.config.inputBinding', bindingFromConfig(cfg, 'input_binding', 'previous', 'output'), 'workflows.config.inputBindingHint')}
                     ${typedTextarea('workflow-agent-instruction', _t('workflows.config.nodeInstruction'), cfg.instruction, _t('workflows.config.instructionPlaceholder'))}
                     ${typedField('workflow-agent-output-key', _t('workflows.config.outputKey'), cfg.output_key, 'agent_result')}
                 `;
@@ -484,6 +523,8 @@
             case 'hitl':
                 wrap.innerHTML = `
                     ${typedTextarea('workflow-hitl-prompt', _t('workflows.config.hitlPrompt'), cfg.prompt, _t('workflows.config.hitlPromptPlaceholder'))}
+                    ${bindingFieldHtml('workflow-hitl-prompt-binding', 'workflows.config.promptBinding', bindingFromConfig(cfg, 'prompt_binding', 'previous', 'output'), 'workflows.config.promptBindingHint')}
+                    <p class="workflow-config-hint">${_t('workflows.config.hitlInteractiveHint')}</p>
                     <div class="form-group">
                         <label for="workflow-hitl-reviewer">${esc(_t('workflows.config.hitlReviewer'))}</label>
                         <select id="workflow-hitl-reviewer" onchange="updateWorkflowTypedConfig()">
@@ -496,11 +537,12 @@
             case 'output':
                 wrap.innerHTML = `
                     ${typedField('workflow-output-key', _t('workflows.config.outputKey'), cfg.output_key, 'result')}
-                    ${typedField('workflow-output-source', _t('workflows.config.outputSource'), cfg.source, '{{previous.output}}')}
+                    ${bindingFieldHtml('workflow-output-source', 'workflows.config.sourceBinding', bindingFromConfig(cfg, 'source_binding', 'previous', 'output'), 'workflows.config.sourceBindingHint')}
+                    ${typedField('workflow-output-static', _t('workflows.config.staticValue'), cfg.static_value || '', _t('workflows.config.optional'))}
                 `;
                 break;
             case 'end':
-                wrap.innerHTML = typedTextarea('workflow-end-template', _t('workflows.config.endTemplate'), cfg.result_template, '{{outputs.result}}');
+                wrap.innerHTML = bindingFieldHtml('workflow-end-result', 'workflows.config.resultBinding', bindingFromConfig(cfg, 'result_binding', 'outputs', 'result'), 'workflows.config.resultBindingHint');
                 break;
             default:
                 wrap.innerHTML = '';
@@ -552,7 +594,7 @@
             case 'agent':
                 return {
                     agent_mode: (document.getElementById('workflow-agent-mode') || {}).value || 'eino_single',
-                    input_source: (document.getElementById('workflow-agent-input-source') || {}).value || '{{previous.output}}',
+                    input_binding: readBinding('workflow-agent-input'),
                     instruction: (document.getElementById('workflow-agent-instruction') || {}).value || '',
                     output_key: (document.getElementById('workflow-agent-output-key') || {}).value || 'agent_result'
                 };
@@ -561,15 +603,17 @@
             case 'hitl':
                 return {
                     prompt: (document.getElementById('workflow-hitl-prompt') || {}).value || '',
+                    prompt_binding: readBinding('workflow-hitl-prompt-binding'),
                     reviewer: (document.getElementById('workflow-hitl-reviewer') || {}).value || 'human'
                 };
             case 'output':
                 return {
                     output_key: (document.getElementById('workflow-output-key') || {}).value || 'result',
-                    source: (document.getElementById('workflow-output-source') || {}).value || ''
+                    source_binding: readBinding('workflow-output-source'),
+                    static_value: (document.getElementById('workflow-output-static') || {}).value || ''
                 };
             case 'end':
-                return { result_template: (document.getElementById('workflow-end-template') || {}).value || '' };
+                return { result_binding: readBinding('workflow-end-result') };
             default:
                 return {};
         }

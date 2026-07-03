@@ -1910,6 +1910,26 @@ function handleStreamEvent(event, progressElement, progressId,
             break;
         }
 
+        case 'workflow_hitl_waiting': {
+            const d = event.data || {};
+            const hitlItemId = addTimelineItem(timeline, 'workflow_hitl_waiting', {
+                title: '🧑‍⚖️ 工作流等待审批',
+                message: event.message || '',
+                data: d
+            });
+            renderInlineWorkflowHitlApproval(hitlItemId, d);
+            break;
+        }
+
+        case 'workflow_paused': {
+            addTimelineItem(timeline, 'workflow_paused', {
+                title: '⏸️ 工作流已暂停',
+                message: event.message || '',
+                data: event.data || {}
+            });
+            break;
+        }
+
         case 'eino_trace_run':
         case 'eino_trace_start':
         case 'eino_trace_end':
@@ -2832,6 +2852,75 @@ function renderInlineHitlApproval(itemId, data) {
 
     approveBtn.onclick = function () { submit('approve'); };
     rejectBtn.onclick = function () { submit('reject'); };
+}
+
+function renderInlineWorkflowHitlApproval(itemId, data) {
+    const item = document.getElementById(itemId);
+    if (!item || !data) return;
+    const runId = data.workflowRunId || data.workflow_run_id;
+    if (!runId) return;
+    let contentEl = item.querySelector('.timeline-item-content');
+    if (!contentEl) {
+        contentEl = document.createElement('div');
+        contentEl.className = 'timeline-item-content';
+        item.appendChild(contentEl);
+    }
+    const existingPanel = contentEl.querySelector('.workflow-hitl-inline-approval');
+    if (existingPanel) existingPanel.remove();
+
+    const label = data.label || data.nodeId || runId;
+    const prompt = data.prompt || '';
+    const panel = document.createElement('div');
+    panel.className = 'workflow-hitl-inline-approval hitl-inline-approval';
+    panel.innerHTML = `
+        <div class="hitl-input-help"><strong>${escapeHtml(label)}</strong> 等待人工审批。</div>
+        ${prompt ? `<div class="hitl-input-help">${escapeHtml(prompt)}</div>` : ''}
+        <div class="hitl-input-help">备注（可选）</div>
+        <input class="hitl-config-input workflow-hitl-inline-comment" type="text" placeholder="审批意见">
+        <div class="hitl-pending-actions">
+            <button class="btn-secondary workflow-hitl-inline-reject">拒绝</button>
+            <button class="btn-primary workflow-hitl-inline-approve">通过</button>
+        </div>
+        <div class="hitl-input-help workflow-hitl-inline-status"></div>
+    `;
+    contentEl.appendChild(panel);
+
+    const approveBtn = panel.querySelector('.workflow-hitl-inline-approve');
+    const rejectBtn = panel.querySelector('.workflow-hitl-inline-reject');
+    const commentInput = panel.querySelector('.workflow-hitl-inline-comment');
+    const statusEl = panel.querySelector('.workflow-hitl-inline-status');
+
+    const setBusy = function (busy) {
+        approveBtn.disabled = busy;
+        rejectBtn.disabled = busy;
+    };
+
+    const submit = async function (approved) {
+        setBusy(true);
+        const comment = String(commentInput.value || '').trim();
+        try {
+            const fetchFn = typeof apiFetch === 'function' ? apiFetch : fetch;
+            const response = await fetchFn(`/api/workflows/runs/${encodeURIComponent(runId)}/resume`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ approved: approved, comment: comment })
+            });
+            const body = response && typeof response.json === 'function' ? await response.json() : null;
+            if (!response || !response.ok) {
+                statusEl.textContent = (body && body.error) ? body.error : '提交失败，请重试';
+                setBusy(false);
+                return;
+            }
+            statusEl.textContent = approved ? '已通过，工作流继续执行' : '已拒绝';
+            panel.classList.add('hitl-inline-done');
+        } catch (e) {
+            statusEl.textContent = '提交失败：' + (e && e.message ? e.message : 'unknown error');
+            setBusy(false);
+        }
+    };
+
+    approveBtn.onclick = function () { submit(true); };
+    rejectBtn.onclick = function () { submit(false); };
 }
 
 function hitlEscapeAttrSelector(val) {

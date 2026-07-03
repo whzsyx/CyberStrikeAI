@@ -2572,6 +2572,10 @@ function renderProcessDetails(messageId, processDetails, options) {
             itemTitle = '🤖 Agent 输出' + (label ? (' · ' + label) : '');
         } else if (eventType === 'workflow_hitl_checkpoint') {
             itemTitle = '🧑‍⚖️ 人工确认检查点';
+        } else if (eventType === 'workflow_hitl_waiting') {
+            itemTitle = '🧑‍⚖️ 工作流等待审批';
+        } else if (eventType === 'workflow_paused') {
+            itemTitle = '⏸️ 工作流已暂停';
         } else if (eventType === 'iteration') {
             const n = data.iteration || 1;
             if (data.orchestration === 'plan_execute' && data.einoScope === 'main') {
