@@ -356,6 +356,8 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	attackChainHandler := handler.NewAttackChainHandler(db, &cfg.OpenAI, log.Logger)
 	vulnerabilityHandler := handler.NewVulnerabilityHandler(db, log.Logger)
 	projectHandler := handler.NewProjectHandler(db, log.Logger)
+	workflowHandler := handler.NewWorkflowHandler(db, log.Logger)
+	workflowHandler.SetAudit(auditSvc)
 	vulnerabilityHandler.SetAudit(auditSvc)
 	webshellHandler := handler.NewWebShellHandler(log.Logger, db)
 	webshellHandler.SetAudit(auditSvc)
@@ -518,6 +520,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 		app, // 传递 App 实例以便动态获取 knowledgeHandler
 		vulnerabilityHandler,
 		projectHandler,
+		workflowHandler,
 		webshellHandler,
 		chatUploadsHandler,
 		roleHandler,
@@ -764,6 +767,7 @@ func setupRoutes(
 	app *App, // 传递 App 实例以便动态获取 knowledgeHandler
 	vulnerabilityHandler *handler.VulnerabilityHandler,
 	projectHandler *handler.ProjectHandler,
+	workflowHandler *handler.WorkflowHandler,
 	webshellHandler *handler.WebShellHandler,
 	chatUploadsHandler *handler.ChatUploadsHandler,
 	roleHandler *handler.RoleHandler,
@@ -1191,6 +1195,13 @@ func setupRoutes(
 		protected.POST("/roles", roleHandler.CreateRole)
 		protected.PUT("/roles/:name", roleHandler.UpdateRole)
 		protected.DELETE("/roles/:name", roleHandler.DeleteRole)
+
+		// 图编排 / 工作流定义（图结构固定，业务字段保存在 graph_json 中）
+		protected.GET("/workflows", workflowHandler.List)
+		protected.GET("/workflows/:id", workflowHandler.Get)
+		protected.POST("/workflows", workflowHandler.Create)
+		protected.PUT("/workflows/:id", workflowHandler.Update)
+		protected.DELETE("/workflows/:id", workflowHandler.Delete)
 
 		// Skills管理（具体路径需注册在 /skills/:name 之前）
 		protected.GET("/skills", skillsHandler.GetSkills)
