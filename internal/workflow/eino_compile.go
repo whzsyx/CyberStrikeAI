@@ -144,11 +144,26 @@ func ResumeWorkflowRun(ctx context.Context, args RunArgs, runID string, approved
 			errText = "人工审批拒绝"
 		}
 		_ = args.DB.FinishWorkflowRun(runID, "rejected", "", errText)
+		if args.Progress != nil {
+			args.Progress("workflow_hitl_rejected", fmt.Sprintf("工作流已在审批节点「%s」被拒绝。", run.PendingHITLNodeID), map[string]interface{}{
+				"workflowRunId": runID,
+				"nodeId":        run.PendingHITLNodeID,
+				"comment":       errText,
+			})
+		}
 		return &RunResult{
 			RunID:    runID,
 			Response: fmt.Sprintf("工作流已在审批节点「%s」被拒绝。", run.PendingHITLNodeID),
 			Status:   "rejected",
 		}, nil
+	}
+
+	if args.Progress != nil {
+		args.Progress("workflow_hitl_resumed", "人工审批已通过，继续执行", map[string]interface{}{
+			"workflowRunId": runID,
+			"nodeId":        run.PendingHITLNodeID,
+			"comment":       strings.TrimSpace(comment),
+		})
 	}
 
 	_ = args.DB.SetWorkflowRunStatus(runID, "running")
@@ -186,5 +201,14 @@ func ResumeWorkflowRun(ctx context.Context, args RunArgs, runID string, approved
 	outputJSON, _ := json.Marshal(output)
 	response := renderWorkflowResponse(args.Role.Name, wf.Name, wf.Version, runID, state)
 	_ = args.DB.FinishWorkflowRun(runID, "completed", string(outputJSON), "")
+	if args.Progress != nil {
+		args.Progress("workflow_done", fmt.Sprintf("流程「%s」运行完成", wf.Name), map[string]interface{}{
+			"workflowRunId": runID,
+			"workflowId":    wf.ID,
+			"outputs":       state.Outputs,
+			"response":      response,
+			"engine":        "eino_workflow",
+		})
+	}
 	return &RunResult{Response: response, RunID: runID, Status: "completed"}, nil
 }

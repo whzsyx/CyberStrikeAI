@@ -91,36 +91,46 @@ func RunRoleBoundWorkflow(ctx context.Context, args RunArgs) (*RunResult, error)
 		return nil, err
 	}
 	state := newWorkflowLocalState(input, runID)
-	if err := executeEinoGraph(ctx, args, runID, wf.ID, wf.Version, graph, state); err != nil {
-		if IsAwaitingHITL(err) {
-			hitl := err.(*AwaitingHITLError)
-			partial := map[string]interface{}{
-				"workflowId":      wf.ID,
-				"workflowName":    wf.Name,
-				"workflowVersion": wf.Version,
-				"workflowRunId":   runID,
-				"status":          "awaiting_hitl",
-				"outputs":         state.Outputs,
-				"executedNodes":   state.Executed,
-				"skippedNodes":    state.Skipped,
-				"pendingHitl": map[string]interface{}{
-					"nodeId": hitl.NodeID,
-					"label":  hitl.NodeLabel,
-					"prompt": hitl.Prompt,
-				},
-				"engine": "eino_workflow",
-			}
-			partialJSON, _ := json.Marshal(partial)
-			_ = args.DB.SetWorkflowRunAwaitingHITL(runID, hitl.NodeID, string(partialJSON))
-			response := fmt.Sprintf("工作流「%s」已在节点「%s」暂停，等待人工审批。\n运行 ID：%s", wf.Name, firstNonEmpty(hitl.NodeLabel, hitl.NodeID), runID)
-			if args.Progress != nil {
-				args.Progress("workflow_paused", response, map[string]interface{}{
-					"workflowRunId": runID,
-					"status":        "awaiting_hitl",
-					"nodeId":        hitl.NodeID,
-					"resumeApi":     fmt.Sprintf("/api/workflows/runs/%s/resume", runID),
-				})
-			}
+	streaming := args.Progress != nil
+	resuming := false
+	for {
+		_, err := invokeEinoGraph(ctx, args, runID, wf.ID, wf.Version, graph, state, resuming)
+		if err == nil {
+			break
+		}
+		if !IsAwaitingHITL(err) {
+			_ = args.DB.FinishWorkflowRun(runID, "failed", "", err.Error())
+			return nil, err
+		}
+		hitl := err.(*AwaitingHITLError)
+		partial := map[string]interface{}{
+			"workflowId":      wf.ID,
+			"workflowName":    wf.Name,
+			"workflowVersion": wf.Version,
+			"workflowRunId":   runID,
+			"status":          "awaiting_hitl",
+			"outputs":         state.Outputs,
+			"executedNodes":   state.Executed,
+			"skippedNodes":    state.Skipped,
+			"pendingHitl": map[string]interface{}{
+				"nodeId": hitl.NodeID,
+				"label":  hitl.NodeLabel,
+				"prompt": hitl.Prompt,
+			},
+			"engine": "eino_workflow",
+		}
+		partialJSON, _ := json.Marshal(partial)
+		_ = args.DB.SetWorkflowRunAwaitingHITL(runID, hitl.NodeID, string(partialJSON))
+		response := fmt.Sprintf("工作流「%s」已在节点「%s」暂停，等待人工审批。\n运行 ID：%s", wf.Name, firstNonEmpty(hitl.NodeLabel, hitl.NodeID), runID)
+		if args.Progress != nil {
+			args.Progress("workflow_paused", response, map[string]interface{}{
+				"workflowRunId": runID,
+				"status":        "awaiting_hitl",
+				"nodeId":        hitl.NodeID,
+				"resumeApi":     fmt.Sprintf("/api/workflows/runs/%s/resume", runID),
+			})
+		}
+		if !streaming {
 			return &RunResult{
 				Response:     response,
 				RunID:        runID,
@@ -128,8 +138,48 @@ func RunRoleBoundWorkflow(ctx context.Context, args RunArgs) (*RunResult, error)
 				AwaitingHITL: true,
 			}, nil
 		}
-		_ = args.DB.FinishWorkflowRun(runID, "failed", "", err.Error())
-		return nil, err
+		ch := registerHITLWaiter(runID)
+		decision, waitErr := waitWorkflowHITLDecisionWithChannel(ctx, args.DB, runID, ch)
+		unregisterHITLWaiter(runID, ch)
+		if waitErr != nil {
+			_ = args.DB.FinishWorkflowRun(runID, "cancelled", "", waitErr.Error())
+			return nil, waitErr
+		}
+		if !decision.Approved {
+			errText := strings.TrimSpace(decision.Comment)
+			if errText == "" {
+				errText = "人工审批拒绝"
+			}
+			_ = args.DB.FinishWorkflowRun(runID, "rejected", "", errText)
+			rejectResponse := fmt.Sprintf("工作流已在审批节点「%s」被拒绝。", firstNonEmpty(hitl.NodeLabel, hitl.NodeID))
+			if args.Progress != nil {
+				args.Progress("workflow_hitl_rejected", rejectResponse, map[string]interface{}{
+					"workflowRunId": runID,
+					"nodeId":        hitl.NodeID,
+					"comment":       errText,
+				})
+			}
+			return &RunResult{
+				Response: rejectResponse,
+				RunID:    runID,
+				Status:   "rejected",
+			}, nil
+		}
+		if args.Progress != nil {
+			args.Progress("workflow_hitl_resumed", "人工审批已通过，继续执行", map[string]interface{}{
+				"workflowRunId": runID,
+				"nodeId":        hitl.NodeID,
+				"comment":       decision.Comment,
+			})
+		}
+		if state.Inputs == nil {
+			state.Inputs = map[string]any{}
+		}
+		state.Inputs["_hitl_approved"] = true
+		state.Inputs["_hitl_comment"] = decision.Comment
+		state.Inputs["_hitl_node_id"] = hitl.NodeID
+		_ = args.DB.SetWorkflowRunStatus(runID, "running")
+		resuming = true
 	}
 
 	output := map[string]interface{}{
