@@ -22086,7 +22086,7 @@ html[data-theme="dark"] .vulnerability-card:hover {
     flex-direction: column;
     gap: 6px;
     min-height: 0;
-    overflow-y: auto;
+    overflow: visible;
 }
 
 .agent-mode-options > .role-selection-item-main {
@@ -22103,6 +22103,61 @@ html[data-theme="dark"] .vulnerability-card:hover {
 .agent-mode-option .role-selection-item-name-main,
 .agent-mode-option .role-selection-item-description-main {
     text-align: left;
+}
+
+.agent-mode-option::after {
+    content: attr(data-agent-mode-detail);
+    position: absolute;
+    left: calc(100% + 12px);
+    top: 50%;
+    z-index: 20;
+    width: max-content;
+    max-width: min(380px, calc(100vw - 40px));
+    padding: 9px 11px;
+    border-radius: 8px;
+    background: rgba(17, 24, 39, 0.96);
+    color: #ffffff;
+    font-size: 0.75rem;
+    line-height: 1.45;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+    opacity: 0;
+    visibility: hidden;
+    transform: translate(4px, -50%);
+    pointer-events: none;
+    transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease;
+}
+
+.agent-mode-option::before {
+    content: "";
+    position: absolute;
+    left: calc(100% + 6px);
+    top: 50%;
+    z-index: 21;
+    width: 10px;
+    height: 10px;
+    background: rgba(17, 24, 39, 0.96);
+    opacity: 0;
+    visibility: hidden;
+    transform: translate(4px, -50%) rotate(45deg);
+    pointer-events: none;
+    transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease;
+}
+
+.agent-mode-option:hover::after,
+.agent-mode-option:focus-visible::after,
+.agent-mode-option:hover::before,
+.agent-mode-option:focus-visible::before {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(0, -50%);
+}
+
+.agent-mode-option:hover::before,
+.agent-mode-option:focus-visible::before {
+    transform: translate(0, -50%) rotate(45deg);
 }
 
 
@@ -22314,6 +22369,57 @@ html[data-theme="dark"] .vulnerability-card:hover {
 
 .role-selection-item-main.selected .role-selection-item-description-main {
     color: #8a5ab8;
+}
+
+.selection-detail-tooltip {
+    position: fixed;
+    z-index: 10000;
+    max-width: min(380px, calc(100vw - 40px));
+    padding: 9px 11px;
+    border-radius: 8px;
+    background: rgba(17, 24, 39, 0.96);
+    color: #ffffff;
+    font-size: 0.75rem;
+    line-height: 1.45;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateX(4px);
+    transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease;
+}
+
+.selection-detail-tooltip.visible {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(0);
+}
+
+.selection-detail-tooltip::before {
+    content: "";
+    position: absolute;
+    left: -5px;
+    top: 50%;
+    width: 10px;
+    height: 10px;
+    background: rgba(17, 24, 39, 0.96);
+    transform: translateY(-50%) rotate(45deg);
+}
+
+.selection-detail-tooltip.placement-left {
+    transform: translateX(-4px);
+}
+
+.selection-detail-tooltip.placement-left.visible {
+    transform: translateX(0);
+}
+
+.selection-detail-tooltip.placement-left::before {
+    left: auto;
+    right: -5px;
 }
 
 .role-selection-checkmark-main {
@@ -23224,6 +23330,25 @@ html[data-theme="dark"] .vulnerability-card:hover {
 
     .role-selection-item-description-main {
         font-size: 0.71875rem;
+    }
+
+    .agent-mode-option::before,
+    .agent-mode-option::after {
+        display: none;
+    }
+
+    .agent-mode-option:hover .role-selection-item-description-main,
+    .agent-mode-option:focus-visible .role-selection-item-description-main {
+        opacity: 1;
+    }
+
+    .agent-mode-option .role-selection-item-description-main {
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+    }
+
+    .selection-detail-tooltip {
+        display: none;
     }
 }
 
@@ -28777,6 +28902,42 @@ html[data-theme="dark"] .webshell-db-count {
     border-color: rgba(96, 165, 250, 0.24) !important;
 }
 
+html[data-theme="dark"] .projects-status-pill--active {
+    background: rgba(34, 197, 94, 0.14) !important;
+    color: #86efac !important;
+    border-color: rgba(34, 197, 94, 0.34) !important;
+}
+
+html[data-theme="dark"] .projects-status-pill--archived {
+    background: rgba(148, 163, 184, 0.12) !important;
+    color: #cbd5e1 !important;
+    border-color: rgba(148, 163, 184, 0.28) !important;
+}
+
+html[data-theme="dark"] .projects-stat-chip--facts {
+    background: rgba(59, 130, 246, 0.16) !important;
+    color: #93c5fd !important;
+    border-color: rgba(59, 130, 246, 0.34) !important;
+}
+
+html[data-theme="dark"] .projects-stat-chip--vulns {
+    background: rgba(249, 115, 22, 0.14) !important;
+    color: #fdba74 !important;
+    border-color: rgba(249, 115, 22, 0.34) !important;
+}
+
+html[data-theme="dark"] .projects-stat-chip--conversations {
+    background: rgba(168, 85, 247, 0.14) !important;
+    color: #d8b4fe !important;
+    border-color: rgba(168, 85, 247, 0.34) !important;
+}
+
+html[data-theme="dark"] .projects-stat-chip--warn {
+    background: rgba(245, 158, 11, 0.14) !important;
+    color: #fcd34d !important;
+    border-color: rgba(245, 158, 11, 0.34) !important;
+}
+
 html[data-theme="dark"] .hitl-tool-badge {
     background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%) !important;
     color: #ffffff !important;
@@ -29100,6 +29261,27 @@ html[data-theme="dark"] #page-projects .projects-list-item:hover {
 html[data-theme="dark"] #page-projects .projects-list-item.is-active {
     background: rgba(96, 165, 250, 0.16) !important;
     border-color: rgba(96, 165, 250, 0.34) !important;
+}
+
+html[data-theme="dark"] #page-projects .projects-list-item-menu {
+    color: #94a3b8 !important;
+}
+
+html[data-theme="dark"] #page-projects .projects-list-item:hover .projects-list-item-menu,
+html[data-theme="dark"] #page-projects .projects-list-item.is-active .projects-list-item-menu {
+    opacity: 0.9;
+}
+
+html[data-theme="dark"] #page-projects .projects-list-item-menu:hover,
+html[data-theme="dark"] #page-projects .projects-list-item-menu:focus-visible {
+    background: rgba(148, 163, 184, 0.16) !important;
+    color: #e2e8f0 !important;
+}
+
+html[data-theme="dark"] #page-projects .projects-list-item.is-active .projects-list-item-menu:hover,
+html[data-theme="dark"] #page-projects .projects-list-item.is-active .projects-list-item-menu:focus-visible {
+    background: rgba(96, 165, 250, 0.20) !important;
+    color: #dbeafe !important;
 }
 
 html[data-theme="dark"] #page-projects .projects-detail-meta,
