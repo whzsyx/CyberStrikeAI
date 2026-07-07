@@ -8853,7 +8853,15 @@ html[data-theme="dark"] .openapi-doc-btn:hover {
     min-width: 0;
 }
 
+.mcp-monitor-page .monitor-sections {
+    gap: 16px;
+}
+
 /* ── MCP 监控页：页面级布局 ── */
+.mcp-monitor-page {
+    --mcp-monitor-card-radius: 12px;
+}
+
 .mcp-monitor-page .page-content {
     padding: 16px 20px;
     background: #f1f5f9;
@@ -8896,7 +8904,7 @@ html[data-theme="dark"] .openapi-doc-btn:hover {
 .monitor-section {
     background: var(--bg-primary);
     border: 1px solid rgba(0, 0, 0, 0.06);
-    border-radius: 16px;
+    border-radius: var(--mcp-monitor-card-radius, 12px);
     padding: 20px 22px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.03);
     display: flex;
@@ -8959,6 +8967,151 @@ html[data-theme="dark"] .openapi-doc-btn:hover {
     max-width: 200px;
 }
 
+.monitor-filter-native-select {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.monitor-section .section-actions .monitor-filter-select-ui {
+    position: relative;
+    display: inline-block;
+    margin-left: 6px;
+    min-width: 140px;
+    max-width: 200px;
+    vertical-align: middle;
+}
+
+.monitor-filter-select-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    line-height: 1.25;
+    cursor: pointer;
+    font-family: inherit;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.monitor-filter-select-trigger:hover:not(:disabled) {
+    border-color: var(--accent-color);
+}
+
+.monitor-filter-select-ui.open .monitor-filter-select-trigger {
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(0, 102, 255, 0.1);
+}
+
+.monitor-filter-select-ui.open {
+    z-index: 120;
+}
+
+.monitor-filter-select-ui.is-disabled .monitor-filter-select-trigger {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.monitor-filter-select-value {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+}
+
+.monitor-filter-select-caret {
+    flex-shrink: 0;
+    color: var(--text-secondary);
+    transition: transform 0.15s ease;
+}
+
+.monitor-filter-select-ui.open .monitor-filter-select-caret {
+    transform: rotate(180deg);
+}
+
+.monitor-filter-select-dropdown {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 200;
+    max-height: 280px;
+    overflow-y: auto;
+    padding: 4px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: var(--shadow-lg);
+}
+
+.monitor-filter-select-ui.open .monitor-filter-select-dropdown {
+    display: block;
+}
+
+.monitor-filter-select-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 10px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.12s ease, color 0.12s ease;
+}
+
+.monitor-filter-select-option:hover {
+    background: var(--bg-secondary);
+}
+
+.monitor-filter-select-option.is-selected {
+    background: rgba(59, 130, 246, 0.08);
+    color: #2563eb;
+    font-weight: 500;
+}
+
+.monitor-filter-select-check {
+    width: 14px;
+    flex-shrink: 0;
+    visibility: hidden;
+    color: #2563eb;
+    font-size: 12px;
+    line-height: 1;
+}
+
+.monitor-filter-select-option.is-selected .monitor-filter-select-check {
+    visibility: visible;
+}
+
+.monitor-filter-select-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .monitor-section .section-actions select:focus {
     outline: none;
     border-color: var(--accent-color);
@@ -9011,7 +9164,7 @@ html[data-theme="dark"] .openapi-doc-btn:hover {
 .mcp-exec-stats {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 16px;
     width: 100%;
 }
 
@@ -9022,7 +9175,7 @@ html[data-theme="dark"] .openapi-doc-btn:hover {
     align-items: stretch;
     background: #fff;
     border: 1px solid rgba(0, 0, 0, 0.07);
-    border-radius: 12px;
+    border-radius: var(--mcp-monitor-card-radius, 12px);
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
     overflow: hidden;
 }
@@ -9151,7 +9304,7 @@ html[data-theme="dark"] .openapi-doc-btn:hover {
 .mcp-stats-combined {
     background: #fff;
     border: 1px solid rgba(0, 0, 0, 0.07);
-    border-radius: 10px;
+    border-radius: var(--mcp-monitor-card-radius, 12px);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
     overflow: hidden;
 }
@@ -9888,9 +10041,6 @@ html[data-theme="dark"] .openapi-doc-btn:hover {
 }
 
 /* MCP 监控统计重构：工具卡 + 柱线趋势 */
-.mcp-stats-combined {
-    border-radius: 8px;
-}
 
 .mcp-stats-combined__head {
     padding: 14px 18px;
@@ -9901,12 +10051,12 @@ html[data-theme="dark"] .openapi-doc-btn:hover {
 }
 
 .mcp-stats-combined__main {
-    padding: 14px 16px 16px;
+    padding: 14px 16px 18px;
 }
 
 .mcp-stats-combined__body--full .mcp-stats-combined__timeline {
     gap: 8px;
-    padding: 14px 16px 12px;
+    padding: 14px 16px 18px;
 }
 
 .mcp-stats-tools-panel {
@@ -10254,7 +10404,7 @@ html[data-theme="dark"] .mcp-stats-timeline-bar.is-hover {
 .mcp-stats-panel {
     background: #fff;
     border: 1px solid rgba(0, 0, 0, 0.07);
-    border-radius: 10px;
+    border-radius: var(--mcp-monitor-card-radius, 12px);
     overflow: hidden;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
@@ -10658,6 +10808,11 @@ tr.mcp-stats-tool-row[data-tool-name]:focus-visible {
     padding: 14px 16px;
 }
 
+.mcp-monitor-page .monitor-section.monitor-executions:has(.monitor-filter-select-ui.open) {
+    overflow: visible;
+    z-index: 5;
+}
+
 .mcp-monitor-page .monitor-executions .section-header {
     margin-bottom: 10px;
 }
@@ -10669,7 +10824,7 @@ tr.mcp-stats-tool-row[data-tool-name]:focus-visible {
 
 .mcp-monitor-page .monitor-table-container {
     border: 1px solid rgba(0, 0, 0, 0.06);
-    border-radius: 12px;
+    border-radius: var(--mcp-monitor-card-radius, 12px);
     box-shadow: none;
 }
 
@@ -29162,7 +29317,8 @@ html[data-theme="dark"] .tasks-filter-select-option:hover,
 html[data-theme="dark"] .workflow-form-select-option:hover,
 html[data-theme="dark"] .projects-filter-select-option:hover,
 html[data-theme="dark"] .chat-files-filter-select-option:hover,
-html[data-theme="dark"] #role-modal .role-form-select-option:hover {
+html[data-theme="dark"] #role-modal .role-form-select-option:hover,
+html[data-theme="dark"] .monitor-filter-select-option:hover {
     background: rgba(96, 165, 250, 0.12);
 }
 
@@ -29177,7 +29333,8 @@ html[data-theme="dark"] .tasks-filter-select-option.is-selected,
 html[data-theme="dark"] .workflow-form-select-option.is-selected,
 html[data-theme="dark"] .projects-filter-select-option.is-selected,
 html[data-theme="dark"] .chat-files-filter-select-option.is-selected,
-html[data-theme="dark"] #role-modal .role-form-select-option.is-selected {
+html[data-theme="dark"] #role-modal .role-form-select-option.is-selected,
+html[data-theme="dark"] .monitor-filter-select-option.is-selected {
     background: rgba(96, 165, 250, 0.18);
     color: var(--accent-hover);
 }
@@ -29198,6 +29355,7 @@ html[data-theme="dark"] .workflow-tool-select-trigger,
 html[data-theme="dark"] .projects-filter-select-trigger,
 html[data-theme="dark"] .chat-files-filter-select-trigger,
 html[data-theme="dark"] .role-form-select-trigger,
+html[data-theme="dark"] .monitor-filter-select-trigger,
 html[data-theme="dark"] .role-selector-btn,
 html[data-theme="dark"] .conversation-project-filter-trigger {
     background: #0f172a;
@@ -29224,7 +29382,8 @@ html[data-theme="dark"] .tasks-filter-select-ui.open .tasks-filter-select-trigge
 html[data-theme="dark"] .workflow-form-select-ui.open .workflow-form-select-trigger,
 html[data-theme="dark"] .projects-filter-select-ui.open .projects-filter-select-trigger,
 html[data-theme="dark"] .chat-files-filter-select-ui.open .chat-files-filter-select-trigger,
-html[data-theme="dark"] #role-modal .role-form-select-ui.open .role-form-select-trigger {
+html[data-theme="dark"] #role-modal .role-form-select-ui.open .role-form-select-trigger,
+html[data-theme="dark"] .monitor-filter-select-ui.open .monitor-filter-select-trigger {
     border-color: var(--accent-color);
     box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.16);
 }
@@ -31136,6 +31295,19 @@ html[data-theme="dark"] #role-modal .tools-status-filter .btn-filter.active {
 html[data-theme="dark"] #page-mcp-monitor,
 html[data-theme="dark"] #page-mcp-monitor .page-content {
     background: #0b1120 !important;
+}
+
+html[data-theme="dark"] .content-area:has(#page-mcp-monitor.active) {
+    background: #0b1120 !important;
+}
+
+/* 概览区保持透明，让 KPI 与工具统计之间的缝隙透出页面底色 */
+html[data-theme="dark"] #page-mcp-monitor .monitor-section.monitor-overview,
+html[data-theme="dark"] #page-mcp-monitor .mcp-exec-stats-root,
+html[data-theme="dark"] #page-mcp-monitor .mcp-exec-stats {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
 }
 
 html[data-theme="dark"] #page-mcp-monitor .page-header {

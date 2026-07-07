@@ -4193,6 +4193,162 @@ async function refreshMonitorPanel(page = null) {
 
 // 处理工具搜索输入（防抖）
 let toolFilterDebounceTimer = null;
+
+const MONITOR_FILTER_SELECT_IDS = ['monitor-status-filter'];
+const monitorFilterSelectMap = {};
+let monitorFilterSelectDocBound = false;
+const MONITOR_FILTER_SELECT_CARET = '<svg class="monitor-filter-select-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+function closeAllMonitorFilterSelects() {
+    Object.keys(monitorFilterSelectMap).forEach(function (id) {
+        const reg = monitorFilterSelectMap[id];
+        if (!reg || !reg.wrapper) return;
+        reg.wrapper.classList.remove('open');
+        if (reg.trigger) reg.trigger.setAttribute('aria-expanded', 'false');
+    });
+}
+
+function syncMonitorFilterSelect(selectId) {
+    const reg = monitorFilterSelectMap[selectId];
+    if (!reg) return;
+    const select = reg.select;
+    const dropdown = reg.dropdown;
+    const trigger = reg.trigger;
+    const valueSpan = trigger.querySelector('.monitor-filter-select-value');
+
+    dropdown.innerHTML = '';
+    Array.prototype.forEach.call(select.options, function (opt) {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'monitor-filter-select-option';
+        item.setAttribute('role', 'option');
+        item.setAttribute('data-value', opt.value);
+        if (opt.value === select.value) {
+            item.classList.add('is-selected');
+            item.setAttribute('aria-selected', 'true');
+        } else {
+            item.setAttribute('aria-selected', 'false');
+        }
+        const check = document.createElement('span');
+        check.className = 'monitor-filter-select-check';
+        check.setAttribute('aria-hidden', 'true');
+        check.textContent = '✓';
+        const label = document.createElement('span');
+        label.className = 'monitor-filter-select-label';
+        label.textContent = opt.textContent;
+        item.appendChild(check);
+        item.appendChild(label);
+        dropdown.appendChild(item);
+    });
+
+    const selectedOpt = select.options[select.selectedIndex];
+    if (valueSpan) {
+        valueSpan.textContent = selectedOpt ? selectedOpt.textContent : '';
+    }
+    trigger.disabled = !!select.disabled;
+    reg.wrapper.classList.toggle('is-disabled', !!select.disabled);
+}
+
+function syncAllMonitorFilterSelects() {
+    MONITOR_FILTER_SELECT_IDS.forEach(syncMonitorFilterSelect);
+}
+
+function enhanceMonitorFilterSelect(selectId) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    const existing = monitorFilterSelectMap[selectId];
+    if (existing && existing.select !== select) {
+        delete monitorFilterSelectMap[selectId];
+    }
+    if (select.dataset.monitorCustomSelect === '1') {
+        syncMonitorFilterSelect(selectId);
+        return;
+    }
+    select.dataset.monitorCustomSelect = '1';
+    select.classList.add('monitor-filter-native-select');
+    select.tabIndex = -1;
+    select.setAttribute('aria-hidden', 'true');
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'monitor-filter-select-ui';
+
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'monitor-filter-select-trigger';
+    trigger.setAttribute('aria-haspopup', 'listbox');
+    trigger.setAttribute('aria-expanded', 'false');
+    const valueSpan = document.createElement('span');
+    valueSpan.className = 'monitor-filter-select-value';
+    trigger.appendChild(valueSpan);
+    trigger.insertAdjacentHTML('beforeend', MONITOR_FILTER_SELECT_CARET);
+
+    const dropdown = document.createElement('div');
+    dropdown.className = 'monitor-filter-select-dropdown';
+    dropdown.setAttribute('role', 'listbox');
+
+    const parent = select.parentNode;
+    parent.insertBefore(wrapper, select);
+    wrapper.appendChild(trigger);
+    wrapper.appendChild(dropdown);
+    wrapper.appendChild(select);
+
+    monitorFilterSelectMap[selectId] = { wrapper: wrapper, trigger: trigger, dropdown: dropdown, select: select };
+
+    trigger.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (select.disabled) return;
+        const open = wrapper.classList.contains('open');
+        closeAllMonitorFilterSelects();
+        if (!open) {
+            wrapper.classList.add('open');
+            trigger.setAttribute('aria-expanded', 'true');
+        }
+    });
+
+    dropdown.addEventListener('click', function (e) {
+        const opt = e.target.closest('.monitor-filter-select-option');
+        if (!opt) return;
+        e.stopPropagation();
+        const val = opt.getAttribute('data-value');
+        if (val === null) return;
+        if (select.value !== val) {
+            select.value = val;
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        wrapper.classList.remove('open');
+        trigger.setAttribute('aria-expanded', 'false');
+        syncMonitorFilterSelect(selectId);
+    });
+
+    select.addEventListener('change', function () {
+        syncMonitorFilterSelect(selectId);
+    });
+
+    if (!select.dataset.monitorFilterBound) {
+        select.dataset.monitorFilterBound = '1';
+        select.addEventListener('change', function () {
+            applyMonitorFilters();
+        });
+    }
+
+    syncMonitorFilterSelect(selectId);
+}
+
+function initMonitorFilterSelects() {
+    if (!monitorFilterSelectDocBound) {
+        document.addEventListener('click', function (e) {
+            if (e.target.closest('.monitor-filter-select-ui')) return;
+            closeAllMonitorFilterSelects();
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') closeAllMonitorFilterSelects();
+        });
+        monitorFilterSelectDocBound = true;
+    }
+    MONITOR_FILTER_SELECT_IDS.forEach(enhanceMonitorFilterSelect);
+    syncAllMonitorFilterSelects();
+}
+
 function handleToolFilterInput() {
     // 清除之前的定时器
     if (toolFilterDebounceTimer) {
@@ -6105,10 +6261,12 @@ document.addEventListener('languagechange', function () {
     updateBatchActionsState();
     loadActiveTasks();
     refreshProgressAndTimelineI18n();
+    syncAllMonitorFilterSelects();
     refreshMonitorPanelFromState();
 });
 
 document.addEventListener('DOMContentLoaded', function () {
+    initMonitorFilterSelects();
     bindMonitorStatsPanelEvents();
     if (window.i18nReady && typeof window.i18nReady.then === 'function') {
         window.i18nReady.then(function () {
