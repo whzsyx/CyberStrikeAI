@@ -1271,7 +1271,7 @@
                                 </label>
                                 <label>
                                     <span data-i18n="hitl.filterDecision">决策</span>
-                                    <select id="hitl-logs-decision-filter" class="hitl-filter-select" onchange="filterHitlLogs()">
+                                    <select id="hitl-logs-decision-filter" class="hitl-filter-select">
                                         <option value="all" data-i18n="hitl.filterAll">全部</option>
                                         <option value="approve" data-i18n="hitl.decisionApprove">通过</option>
                                         <option value="reject" data-i18n="hitl.decisionReject">拒绝</option>
@@ -1279,7 +1279,7 @@
                                 </label>
                                 <label>
                                     <span data-i18n="hitl.filterDecidedBy">审批方</span>
-                                    <select id="hitl-logs-decidedby-filter" class="hitl-filter-select" onchange="filterHitlLogs()">
+                                    <select id="hitl-logs-decidedby-filter" class="hitl-filter-select">
                                         <option value="all" data-i18n="hitl.filterAll">全部</option>
                                         <option value="human" data-i18n="hitl.reviewerHuman">人工</option>
                                         <option value="audit_agent" data-i18n="hitl.reviewerAgent">审计 Agent</option>
@@ -1795,7 +1795,7 @@
                                             </label>
                                             <label class="projects-fact-filter-field">
                                                 <span class="projects-fact-filter-label" data-i18n="projects.category">分类</span>
-                                                <select id="project-facts-filter-category" onchange="loadProjectFacts()">
+                                                <select id="project-facts-filter-category" class="projects-filter-select-native">
                                                     <option value="" data-i18n="projects.all">全部</option>
                                                     <option value="target">target</option>
                                                     <option value="auth">auth</option>
@@ -1810,7 +1810,7 @@
                                             </label>
                                             <label class="projects-fact-filter-field">
                                                 <span class="projects-fact-filter-label" data-i18n="projects.confidence">置信度</span>
-                                                <select id="project-facts-filter-confidence" onchange="loadProjectFacts()">
+                                                <select id="project-facts-filter-confidence" class="projects-filter-select-native">
                                                     <option value="" data-i18n="projects.all">全部</option>
                                                     <option value="confirmed" data-i18n="projects.confidenceConfirmed">已确认</option>
                                                     <option value="tentative" data-i18n="projects.confidenceTentative">待确认</option>
@@ -1848,7 +1848,7 @@
                                         <div class="projects-fact-toolbar-filters projects-graph-toolbar-row">
                                             <label class="projects-fact-filter-field">
                                                 <span class="projects-fact-filter-label" data-i18n="projects.graphView">视图</span>
-                                                <select id="project-graph-view" onchange="loadProjectFactGraph()">
+                                                <select id="project-graph-view" class="projects-filter-select-native">
                                                     <option value="path" data-i18n="projects.graphViewPath">攻击路径</option>
                                                     <option value="full" data-i18n="projects.graphViewFull">完整关系</option>
                                                 </select>
@@ -1961,7 +1961,7 @@
                                             </label>
                                             <label class="projects-fact-filter-field">
                                                 <span class="projects-fact-filter-label" data-i18n="projects.severity">严重度</span>
-                                                <select id="project-vulns-filter-severity" onchange="loadProjectVulnerabilities()">
+                                                <select id="project-vulns-filter-severity" class="projects-filter-select-native">
                                                     <option value="" data-i18n="projects.all">全部</option>
                                                     <option value="critical">critical</option>
                                                     <option value="high">high</option>
@@ -1972,7 +1972,7 @@
                                             </label>
                                             <label class="projects-fact-filter-field">
                                                 <span class="projects-fact-filter-label" data-i18n="projects.status">状态</span>
-                                                <select id="project-vulns-filter-status" onchange="loadProjectVulnerabilities()">
+                                                <select id="project-vulns-filter-status" class="projects-filter-select-native">
                                                     <option value="" data-i18n="projects.all">全部</option>
                                                     <option value="open" data-i18n="vulnerabilityPage.statusOpen">待处理</option>
                                                     <option value="confirmed" data-i18n="vulnerabilityPage.statusConfirmed">已确认</option>
@@ -2020,7 +2020,7 @@
                                                         <div class="projects-form-field">
                                                             <label for="project-edit-status" data-i18n="projects.status">状态</label>
                                                             <div class="projects-status-select-wrap">
-                                                                <select id="project-edit-status" class="form-input projects-status-select">
+                                                                <select id="project-edit-status" class="form-input projects-status-select projects-filter-select-native">
                                                                     <option value="active" data-i18n="projects.statusActive">进行中</option>
                                                                     <option value="archived" data-i18n="projects.statusArchived">已归档</option>
                                                                 </select>
@@ -2317,7 +2317,7 @@
                             </label>
                             <label>
                                 <span data-i18n="chatFilesPage.groupBy">分组</span>
-                                <select id="chat-files-group-by" class="form-control" onchange="chatFilesGroupByChange()">
+                                <select id="chat-files-group-by" class="form-control chat-files-filter-select-native">
                                     <option value="none" data-i18n="chatFilesPage.groupNone">不分组</option>
                                     <option value="date" data-i18n="chatFilesPage.groupByDate">按日期</option>
                                     <option value="conversation" data-i18n="chatFilesPage.groupByConversation">按会话</option>
@@ -2356,7 +2356,7 @@
                             <div class="batch-queues-filters tasks-filters batch-queues-filters--compact">
                                 <label>
                                     <span data-i18n="tasksPage.statusFilter">状态筛选</span>
-                                    <select id="batch-queues-status-filter" onchange="filterBatchQueues()">
+                                    <select id="batch-queues-status-filter" class="tasks-filter-select">
                                         <option value="all" data-i18n="knowledgePage.all">全部</option>
                                         <option value="pending" data-i18n="tasksPage.statusPending">待执行</option>
                                         <option value="running" data-i18n="dashboard.executing">执行中</option>
@@ -2616,7 +2616,7 @@
                                 </div>
                                 <div class="form-group" id="workflow-prop-type-wrap">
                                     <label for="workflow-prop-type" data-i18n="workflows.propType">类型</label>
-                                    <select id="workflow-prop-type" onchange="updateWorkflowSelectedProperty()">
+                                    <select id="workflow-prop-type" class="workflow-form-select-native" onchange="updateWorkflowSelectedProperty()">
                                         <option value="start" data-i18n="workflows.nodes.start">开始</option>
                                         <option value="tool" data-i18n="workflows.nodes.tool">工具</option>
                                         <option value="agent" data-i18n="workflows.nodes.agent">Agent</option>
@@ -5065,14 +5065,14 @@
                 </div>
                 <div class="form-group">
                     <label for="role-workflow-id" data-i18n="roleModal.bindWorkflow">绑定图编排流程</label>
-                    <select id="role-workflow-id">
+                    <select id="role-workflow-id" class="role-form-select-native">
                         <option value="" data-i18n="roleModal.noWorkflowBind">不绑定流程</option>
                     </select>
                     <small class="form-hint" data-i18n="roleModal.bindWorkflowHint">选中流程后，对话页使用该角色会自动触发绑定图；流程字段由图定义 JSON 自由配置。</small>
                 </div>
                 <div class="form-group">
                     <label for="role-workflow-policy" data-i18n="roleModal.workflowPolicy">流程触发策略</label>
-                    <select id="role-workflow-policy">
+                    <select id="role-workflow-policy" class="role-form-select-native">
                         <option value="auto" data-i18n="roleModal.workflowPolicyAuto">自动触发</option>
                         <option value="off" data-i18n="roleModal.workflowPolicyOff">关闭</option>
                     </select>

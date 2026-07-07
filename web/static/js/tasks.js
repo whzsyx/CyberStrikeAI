@@ -764,6 +764,7 @@ function toggleTasksAutoRefresh(enabled) {
 
 // 初始化任务管理页面
 function initTasksPage() {
+    initBatchQueuesFilterSelects();
     // 恢复自动刷新设置
     const autoRefreshCheckbox = document.getElementById('tasks-auto-refresh');
     if (autoRefreshCheckbox) {
@@ -1149,6 +1150,153 @@ async function loadBatchQueues(page) {
             list.innerHTML = '<div class="tasks-empty"><p>' + _t('tasks.loadFailedRetry') + ': ' + escapeHtml(error.message) + '</p><button class="btn-secondary" onclick="refreshBatchQueues()">' + _t('tasks.retry') + '</button></div>';
         }
     }
+}
+
+const BATCH_QUEUES_FILTER_SELECT_IDS = ['batch-queues-status-filter'];
+const batchQueuesFilterSelectMap = {};
+let batchQueuesFilterSelectDocBound = false;
+
+const TASKS_FILTER_SELECT_CARET = '<svg class="tasks-filter-select-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+function closeAllBatchQueuesFilterSelects() {
+    Object.keys(batchQueuesFilterSelectMap).forEach(function (id) {
+        const reg = batchQueuesFilterSelectMap[id];
+        if (!reg || !reg.wrapper) return;
+        reg.wrapper.classList.remove('open');
+        if (reg.trigger) reg.trigger.setAttribute('aria-expanded', 'false');
+    });
+}
+
+function syncBatchQueuesFilterSelect(selectId) {
+    const reg = batchQueuesFilterSelectMap[selectId];
+    if (!reg) return;
+    const select = reg.select;
+    const dropdown = reg.dropdown;
+    const trigger = reg.trigger;
+    const valueSpan = trigger.querySelector('.tasks-filter-select-value');
+
+    dropdown.innerHTML = '';
+    Array.prototype.forEach.call(select.options, function (opt) {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'tasks-filter-select-option';
+        item.setAttribute('role', 'option');
+        item.setAttribute('data-value', opt.value);
+        if (opt.value === select.value) {
+            item.classList.add('is-selected');
+            item.setAttribute('aria-selected', 'true');
+        } else {
+            item.setAttribute('aria-selected', 'false');
+        }
+        const check = document.createElement('span');
+        check.className = 'tasks-filter-select-check';
+        check.setAttribute('aria-hidden', 'true');
+        check.textContent = '✓';
+        const label = document.createElement('span');
+        label.className = 'tasks-filter-select-label';
+        label.textContent = opt.textContent;
+        item.appendChild(check);
+        item.appendChild(label);
+        dropdown.appendChild(item);
+    });
+
+    const selectedOpt = select.options[select.selectedIndex];
+    if (valueSpan) {
+        valueSpan.textContent = selectedOpt ? selectedOpt.textContent : '';
+    }
+    trigger.disabled = !!select.disabled;
+    reg.wrapper.classList.toggle('is-disabled', !!select.disabled);
+}
+
+function syncAllBatchQueuesFilterSelects() {
+    BATCH_QUEUES_FILTER_SELECT_IDS.forEach(syncBatchQueuesFilterSelect);
+}
+
+function enhanceBatchQueuesFilterSelect(selectId) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    if (select.dataset.tasksCustomSelect === '1') {
+        syncBatchQueuesFilterSelect(selectId);
+        return;
+    }
+    select.dataset.tasksCustomSelect = '1';
+    select.classList.add('tasks-filter-native-select');
+    select.tabIndex = -1;
+    select.setAttribute('aria-hidden', 'true');
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tasks-filter-select-ui';
+
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'tasks-filter-select-trigger';
+    trigger.setAttribute('aria-haspopup', 'listbox');
+    trigger.setAttribute('aria-expanded', 'false');
+    const valueSpan = document.createElement('span');
+    valueSpan.className = 'tasks-filter-select-value';
+    trigger.appendChild(valueSpan);
+    trigger.insertAdjacentHTML('beforeend', TASKS_FILTER_SELECT_CARET);
+
+    const dropdown = document.createElement('div');
+    dropdown.className = 'tasks-filter-select-dropdown';
+    dropdown.setAttribute('role', 'listbox');
+
+    const parent = select.parentNode;
+    parent.insertBefore(wrapper, select);
+    wrapper.appendChild(trigger);
+    wrapper.appendChild(dropdown);
+    wrapper.appendChild(select);
+
+    batchQueuesFilterSelectMap[selectId] = { wrapper: wrapper, trigger: trigger, dropdown: dropdown, select: select };
+
+    trigger.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (select.disabled) return;
+        const open = wrapper.classList.contains('open');
+        closeAllBatchQueuesFilterSelects();
+        if (!open) {
+            wrapper.classList.add('open');
+            trigger.setAttribute('aria-expanded', 'true');
+        }
+    });
+
+    dropdown.addEventListener('click', function (e) {
+        const opt = e.target.closest('.tasks-filter-select-option');
+        if (!opt) return;
+        e.stopPropagation();
+        const val = opt.getAttribute('data-value');
+        if (val === null) return;
+        if (select.value !== val) {
+            select.value = val;
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        wrapper.classList.remove('open');
+        trigger.setAttribute('aria-expanded', 'false');
+        syncBatchQueuesFilterSelect(selectId);
+    });
+
+    select.addEventListener('change', function () {
+        syncBatchQueuesFilterSelect(selectId);
+    });
+}
+
+function initBatchQueuesFilterSelects() {
+    if (!batchQueuesFilterSelectDocBound) {
+        document.addEventListener('click', closeAllBatchQueuesFilterSelects);
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') closeAllBatchQueuesFilterSelects();
+        });
+        batchQueuesFilterSelectDocBound = true;
+    }
+    BATCH_QUEUES_FILTER_SELECT_IDS.forEach(function (id) {
+        enhanceBatchQueuesFilterSelect(id);
+        const select = document.getElementById(id);
+        if (select && !select.dataset.tasksFilterBound) {
+            select.dataset.tasksFilterBound = '1';
+            select.addEventListener('change', filterBatchQueues);
+        }
+    });
+    syncAllBatchQueuesFilterSelects();
 }
 
 // 筛选批量任务队列
@@ -2526,6 +2674,7 @@ window.saveInlineSchedule = saveInlineSchedule;
 // 语言切换后，列表/分页/详情弹窗由 JS 渲染的文案需用当前语言重绘（applyTranslations 不会处理 innerHTML 内容）
 document.addEventListener('languagechange', function () {
     try {
+        syncAllBatchQueuesFilterSelects();
         const tasksPage = document.getElementById('page-tasks');
         if (!tasksPage || !tasksPage.classList.contains('active')) {
             return;
@@ -2544,4 +2693,8 @@ document.addEventListener('languagechange', function () {
     } catch (e) {
         console.warn('languagechange tasks refresh failed', e);
     }
+});
+
+document.addEventListener('DOMContentLoaded', function () {
+    initBatchQueuesFilterSelects();
 });
