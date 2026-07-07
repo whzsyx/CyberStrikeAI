@@ -9,6 +9,12 @@
 
 **Community**: [Join us on Discord](https://discord.gg/8PjVCMu8Zw)
 
+**CyberStrikeAI is building the agentic execution layer for modern cyber security.**
+
+It brings AI agents, security tools, MCP-native integrations, knowledge systems, human oversight, and attack-chain intelligence into a unified workspace for authorized cyber engagements. Instead of treating tools, prompts, evidence, approvals, and reports as separate fragments, CyberStrikeAI turns security intent into auditable multi-agent workflows that can plan, execute, review, replay, and continuously accumulate operational context.
+
+Built in Go, CyberStrikeAI provides a full-stack foundation for AI-native security operations: 100+ curated tool recipes, role-based testing, Agent Skills, Eino-powered single-agent and multi-agent orchestration, RAG knowledge retrieval, graph workflows, vulnerability and task lifecycle management, WebShell operations, chatbot access, and a lightweight built-in C2 framework for authorized lab and engagement scenarios.
+
 <details>
 <summary><strong>WeChat group</strong> (click to reveal QR code)</summary>
 
@@ -26,8 +32,6 @@ If CyberStrikeAI helps you, you can support the project via **WeChat Pay** or **
 </div>
 
 </details>
-
-CyberStrikeAI is an **AI-native security testing platform** built in Go. It integrates 100+ security tools, an intelligent orchestration engine, role-based testing with predefined security roles, a skills system with specialized testing skills, comprehensive lifecycle management capabilities, and a **built-in lightweight C2 (Command & Control) framework** for **authorized** engagements (listeners, encrypted implants, sessions, tasks, real-time events, REST and MCP). Through native MCP protocol and AI agents, it enables end-to-end automation from conversational commands to vulnerability discovery, attack-chain analysis, knowledge retrieval, and result visualization—delivering an auditable, traceable, and collaborative testing environment for security teams.
 
 ## Interface & Integration Preview
 
@@ -115,12 +119,14 @@ CyberStrikeAI is an **AI-native security testing platform** built in Go. It inte
 
 ## Highlights
 
-- 🤖 AI decision engine with OpenAI-compatible models (GPT, Claude, DeepSeek, etc.)
-- 🔌 Native MCP implementation with HTTP/stdio/SSE transports and external MCP federation
-- 🧰 100+ prebuilt tool recipes + YAML-based extension system
+- 🤖 Agentic execution layer for translating natural-language intent into precise, governed, auditable security action
+- 🧩 Eino-powered single-agent and multi-agent orchestration with Deep, Plan-Execute, and Supervisor modes
+- 🔌 MCP-native tool execution with HTTP/stdio/SSE transports, external MCP federation, and dynamic tool discovery
+- 🧰 100+ curated security tool recipes, YAML-based extensions, and role-scoped tool control
 - 📄 Large-result pagination, compression, and searchable archives
-- 🔗 Attack-chain graph, risk scoring, and step-by-step replay
-- 🔒 Password-protected web UI, audit logs, and SQLite persistence
+- 🔗 Attack-chain intelligence with graph views, risk scoring, project facts, and step-by-step replay
+- 🧑‍⚖️ Human-in-the-loop governance with approval modes, allowlists, audit-agent review, and traceable decisions
+- 🔒 Password-protected web UI, audit logs, SQLite persistence, and operational evidence retention
 - 📚 Knowledge base (RAG): **Eino MultiQuery** query rewrite + multi-path vector retrieval + **HTTP rerank** (DashScope `gte-rerank` / Cohere-compatible) + post-processing (dedupe, budget); **Eino Compose** indexing pipeline
 - 📁 Conversation grouping with pinning, rename, and batch management
 - 📂 **Project management**: shared facts (blackboard) across sessions, `upsert_project_fact` + `links` to chain paths; attack-chain and project fact graph views
@@ -329,7 +335,7 @@ Requirements / tips:
 - **Result compression** – multi-megabyte logs can be summarized or losslessly compressed before persisting to keep SQLite lean.
 
 **Creating a custom tool (typical flow)**
-1. Copy an existing YAML file from `tools/` (for example `tools/sample.yaml`).
+1. Copy an existing YAML file from `tools/` (for example `tools/nmap.yaml` or `tools/ffuf.yaml`).
 2. Update `name`, `command`, `args`, and `short_description`.
 3. Describe positional or flag parameters in `parameters[]` so the agent knows how to build CLI arguments.
 4. Provide a longer `description`/`notes` block if the agent needs extra context or post-processing tips.

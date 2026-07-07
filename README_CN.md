@@ -8,6 +8,12 @@
 
 **社区**：[加入 Discord](https://discord.gg/8PjVCMu8Zw)
 
+**CyberStrikeAI 正在构建现代网络安全的智能体执行层。**
+
+它将 AI 智能体、安全工具、MCP 原生集成、知识系统、人工监督与攻击链智能汇聚到一个面向授权安全任务的统一工作空间中。CyberStrikeAI 不再把工具、提示词、证据、审批和报告视为割裂环节，而是将安全意图转化为可规划、可执行、可审查、可复盘、可持续沉淀上下文的多智能体工作流。
+
+CyberStrikeAI 基于 Go 构建，为 AI 原生安全运营提供完整底座：100+ 精选工具配方、角色化测试、Agent Skills、基于 Eino 的单智能体与多智能体编排、RAG 知识检索、图工作流、漏洞与任务生命周期管理、WebShell 运营、机器人接入，以及面向授权实验室和安全任务场景的内置轻量 C2 框架。
+
 <details>
 <summary><strong>微信群</strong>（点击展开二维码）</summary>
 
@@ -25,8 +31,6 @@
 </div>
 
 </details>
-
-CyberStrikeAI 是一款 **AI 原生安全测试平台**，基于 Go 构建，集成了 100+ 安全工具、智能编排引擎、角色化测试与预设安全测试角色、Skills 技能系统与专业测试技能、完整的测试生命周期管理能力，以及面向 **授权场景** 的 **内置轻量 C2（Command & Control，指挥与控制）** 能力（监听器、加密通信、会话与任务、实时事件、REST 与 MCP 协同）。通过原生 MCP 协议与 AI 智能体，支持从对话指令到漏洞发现、攻击链分析、知识检索与结果可视化的全流程自动化，为安全团队提供可审计、可追溯、可协作的专业测试环境。
 
 ## 界面与集成预览
 
@@ -114,12 +118,14 @@ CyberStrikeAI 是一款 **AI 原生安全测试平台**，基于 Go 构建，集
 
 ## 特性速览
 
-- 🤖 兼容 OpenAI/DeepSeek/Claude 等模型的智能决策引擎
-- 🔌 原生 MCP 协议，支持 HTTP / stdio / SSE 传输模式以及外部 MCP 接入
-- 🧰 100+ 现成工具模版 + YAML 扩展能力
+- 🤖 面向智能体时代的执行层，将自然语言意图转化为精准、受控、可审计的安全行动
+- 🧩 基于 Eino 的单智能体与多智能体编排，支持 Deep、Plan-Execute、Supervisor 等模式
+- 🔌 MCP 原生工具执行，支持 HTTP / stdio / SSE 传输、外部 MCP 联邦与动态工具发现
+- 🧰 100+ 精选安全工具配方、YAML 扩展机制与按角色收敛的工具控制
 - 📄 大结果分页、压缩与全文检索
-- 🔗 攻击链可视化、风险打分与步骤回放
-- 🔒 Web 登录保护、审计日志、SQLite 持久化
+- 🔗 攻击链智能分析，支持图谱视图、风险打分、项目事实沉淀与步骤回放
+- 🧑‍⚖️ 人机协同治理，支持审批模式、免审批白名单、审计 Agent 复核与可追溯决策
+- 🔒 Web 登录保护、审计日志、SQLite 持久化与行动证据留存
 - 📚 知识库（RAG）：**Eino MultiQuery** 查询改写 + 多路向量检索 + **HTTP 精排**（DashScope `gte-rerank` / Cohere 兼容）+ 后处理（去重、预算）；索引侧为 **Eino Compose** 流水线
 - 📁 对话分组管理：支持分组创建、置顶、重命名、删除等操作
 - 📂 **项目管理**：共享事实（黑板）跨会话沉淀认知，`upsert_project_fact` + `links` 串联攻击路径；聊天攻击链与项目事实图可视化
@@ -327,7 +333,7 @@ go build -o cyberstrike-ai cmd/server/main.go
 - **结果压缩/摘要**：多兆字节日志可先压缩或生成摘要再写入 SQLite，减小档案体积。
 
 **自定义工具的一般步骤**
-1. 复制 `tools/` 下现有示例（如 `tools/sample.yaml`）。
+1. 复制 `tools/` 下现有示例（如 `tools/nmap.yaml` 或 `tools/ffuf.yaml`）。
 2. 修改 `name`、`command`、`args`、`short_description` 等基础信息。
 3. 在 `parameters[]` 中声明位置参数或带 flag 的参数，方便智能体自动拼装命令。
 4. 视需要补充 `description` 或 `notes`，给 AI 额外上下文或结果解读提示。
