@@ -4753,21 +4753,21 @@
                 </div>
                 <div class="form-group">
                     <label for="batch-queue-role" data-i18n="batchImportModal.role">角色</label>
-                    <select id="batch-queue-role" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.875rem;">
+                    <select id="batch-queue-role">
                         <option value="" data-i18n="batchImportModal.defaultRole">默认</option>
                     </select>
                     <div class="form-hint" style="margin-top: 4px;" data-i18n="batchImportModal.roleHint">选择一个角色，所有任务将使用该角色的配置（提示词和工具）执行。</div>
                 </div>
                 <div class="form-group">
                     <label for="batch-queue-project-id" data-i18n="batchImportModal.project">所属项目</label>
-                    <select id="batch-queue-project-id" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.875rem;">
+                    <select id="batch-queue-project-id">
                         <option value="" data-i18n="batchImportModal.projectNone">（未绑定）</option>
                     </select>
                     <div class="form-hint" style="margin-top: 4px;" data-i18n="batchImportModal.projectHint">可为队列绑定项目；留空则不绑定项目上下文。</div>
                 </div>
                 <div class="form-group">
                     <label for="batch-queue-agent-mode" data-i18n="batchImportModal.agentMode">代理模式</label>
-                    <select id="batch-queue-agent-mode" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.875rem;">
+                    <select id="batch-queue-agent-mode">
                         <option value="eino_single" data-i18n="chat.agentModeEinoSingle">Eino 单代理（ADK）</option>
                         <option value="deep" data-i18n="chat.agentModeDeep">Deep（DeepAgent）</option>
                         <option value="plan_execute" data-i18n="chat.agentModePlanExecuteLabel">Plan-Execute</option>
@@ -4782,7 +4782,7 @@
                 </div>
                 <div class="form-group">
                     <label for="batch-queue-schedule-mode" data-i18n="batchImportModal.scheduleMode">调度方式</label>
-                    <select id="batch-queue-schedule-mode" onchange="handleBatchScheduleModeChange()" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.875rem;">
+                    <select id="batch-queue-schedule-mode" onchange="handleBatchScheduleModeChange()">
                         <option value="manual" data-i18n="batchImportModal.scheduleModeManual">手工执行</option>
                         <option value="cron" data-i18n="batchImportModal.scheduleModeCron">调度表达式（Cron）</option>
                     </select>

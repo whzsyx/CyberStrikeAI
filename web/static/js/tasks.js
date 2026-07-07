@@ -765,6 +765,7 @@ function toggleTasksAutoRefresh(enabled) {
 // 初始化任务管理页面
 function initTasksPage() {
     initBatchQueuesFilterSelects();
+    initBatchFormSelects();
     // 恢复自动刷新设置
     const autoRefreshCheckbox = document.getElementById('tasks-auto-refresh');
     if (autoRefreshCheckbox) {
@@ -930,6 +931,7 @@ async function showBatchImportModal() {
             }
         }
         await refreshBatchProjectSelectOptions();
+        refreshBatchFormSelects();
 
         openAppModal('batch-import-modal', { focusEl: input });
     }
@@ -1297,6 +1299,207 @@ function initBatchQueuesFilterSelects() {
         }
     });
     syncAllBatchQueuesFilterSelects();
+}
+
+const BATCH_IMPORT_FORM_SELECT_IDS = [
+    'batch-queue-role',
+    'batch-queue-project-id',
+    'batch-queue-agent-mode',
+    'batch-queue-schedule-mode',
+];
+const batchFormSelectMap = {};
+let batchFormSelectDocBound = false;
+const BATCH_FORM_SELECT_CARET = '<svg class="batch-form-select-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+function closeAllBatchFormSelects() {
+    Object.keys(batchFormSelectMap).forEach(function (id) {
+        const reg = batchFormSelectMap[id];
+        if (!reg || !reg.wrapper) return;
+        reg.wrapper.classList.remove('open');
+        if (reg.trigger) reg.trigger.setAttribute('aria-expanded', 'false');
+    });
+}
+
+function syncBatchFormSelect(selectId) {
+    const reg = batchFormSelectMap[selectId];
+    if (!reg) return;
+    const select = reg.select;
+    const dropdown = reg.dropdown;
+    const trigger = reg.trigger;
+    const valueSpan = trigger.querySelector('.batch-form-select-value');
+
+    dropdown.innerHTML = '';
+    Array.prototype.forEach.call(select.options, function (opt) {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'batch-form-select-option';
+        item.setAttribute('role', 'option');
+        item.setAttribute('data-value', opt.value);
+        if (opt.value === select.value) {
+            item.classList.add('is-selected');
+            item.setAttribute('aria-selected', 'true');
+        } else {
+            item.setAttribute('aria-selected', 'false');
+        }
+        const check = document.createElement('span');
+        check.className = 'batch-form-select-check';
+        check.setAttribute('aria-hidden', 'true');
+        check.textContent = '✓';
+        const label = document.createElement('span');
+        label.className = 'batch-form-select-label';
+        label.textContent = opt.textContent;
+        item.appendChild(check);
+        item.appendChild(label);
+        dropdown.appendChild(item);
+    });
+
+    const selectedOpt = select.options[select.selectedIndex];
+    if (valueSpan) {
+        valueSpan.textContent = selectedOpt ? selectedOpt.textContent : '';
+    }
+    trigger.disabled = !!select.disabled;
+    reg.wrapper.classList.toggle('is-disabled', !!select.disabled);
+}
+
+function syncAllBatchImportFormSelects() {
+    BATCH_IMPORT_FORM_SELECT_IDS.forEach(syncBatchFormSelect);
+}
+
+function isBatchFormSelectFocused(selectId) {
+    const active = document.activeElement;
+    if (!active) return false;
+    if (active.id === selectId) return true;
+    const reg = batchFormSelectMap[selectId];
+    return !!(reg && reg.wrapper && reg.wrapper.contains(active));
+}
+
+function focusBatchFormSelect(selectId) {
+    const reg = batchFormSelectMap[selectId];
+    if (reg && reg.trigger) {
+        reg.trigger.focus();
+        return;
+    }
+    const select = document.getElementById(selectId);
+    if (select) select.focus();
+}
+
+function bindBatchInlineEditFocusOut(container, saveFn, isCancelledFn) {
+    if (!container) return;
+    container.addEventListener('focusout', function () {
+        setTimeout(function () {
+            if (isCancelledFn && isCancelledFn()) return;
+            if (container.contains(document.activeElement)) return;
+            saveFn();
+        }, 100);
+    });
+}
+
+function enhanceBatchFormSelect(selectId, options) {
+    options = options || {};
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    const existing = batchFormSelectMap[selectId];
+    if (existing && existing.select !== select) {
+        delete batchFormSelectMap[selectId];
+    }
+    if (select.dataset.batchFormCustom === '1') {
+        syncBatchFormSelect(selectId);
+        return;
+    }
+    select.dataset.batchFormCustom = '1';
+    select.classList.add('batch-form-native-select');
+    select.tabIndex = -1;
+    select.setAttribute('aria-hidden', 'true');
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'batch-form-select-ui' + (options.inline ? ' batch-form-select-ui--inline' : '');
+
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'batch-form-select-trigger';
+    trigger.setAttribute('aria-haspopup', 'listbox');
+    trigger.setAttribute('aria-expanded', 'false');
+    const valueSpan = document.createElement('span');
+    valueSpan.className = 'batch-form-select-value';
+    trigger.appendChild(valueSpan);
+    trigger.insertAdjacentHTML('beforeend', BATCH_FORM_SELECT_CARET);
+
+    const dropdown = document.createElement('div');
+    dropdown.className = 'batch-form-select-dropdown';
+    dropdown.setAttribute('role', 'listbox');
+
+    const parent = select.parentNode;
+    parent.insertBefore(wrapper, select);
+    wrapper.appendChild(trigger);
+    wrapper.appendChild(dropdown);
+    wrapper.appendChild(select);
+
+    batchFormSelectMap[selectId] = { wrapper: wrapper, trigger: trigger, dropdown: dropdown, select: select };
+
+    trigger.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (select.disabled) return;
+        const open = wrapper.classList.contains('open');
+        closeAllBatchFormSelects();
+        if (!open) {
+            wrapper.classList.add('open');
+            trigger.setAttribute('aria-expanded', 'true');
+        }
+    });
+
+    dropdown.addEventListener('click', function (e) {
+        const opt = e.target.closest('.batch-form-select-option');
+        if (!opt) return;
+        e.stopPropagation();
+        const val = opt.getAttribute('data-value');
+        if (val === null) return;
+        if (select.value !== val) {
+            select.value = val;
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        wrapper.classList.remove('open');
+        trigger.setAttribute('aria-expanded', 'false');
+        syncBatchFormSelect(selectId);
+    });
+
+    select.addEventListener('change', function () {
+        syncBatchFormSelect(selectId);
+    });
+
+    syncBatchFormSelect(selectId);
+}
+
+function refreshBatchFormSelect(selectId, options) {
+    const select = document.getElementById(selectId);
+    if (!select) {
+        delete batchFormSelectMap[selectId];
+        return;
+    }
+    enhanceBatchFormSelect(selectId, options);
+}
+
+function refreshBatchFormSelects() {
+    Object.keys(batchFormSelectMap).forEach(function (id) {
+        if (!document.getElementById(id)) delete batchFormSelectMap[id];
+    });
+    BATCH_IMPORT_FORM_SELECT_IDS.forEach(function (id) {
+        enhanceBatchFormSelect(id, { inline: false });
+    });
+    if (!batchFormSelectDocBound) {
+        batchFormSelectDocBound = true;
+        document.addEventListener('click', function (e) {
+            if (e.target.closest('.batch-form-select-ui')) return;
+            closeAllBatchFormSelects();
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') closeAllBatchFormSelects();
+        });
+    }
+    syncAllBatchImportFormSelects();
+}
+
+function initBatchFormSelects() {
+    refreshBatchFormSelects();
 }
 
 // 筛选批量任务队列
@@ -2337,15 +2540,20 @@ function startInlineEditRole() {
                 ${orphanOpt}${opts}
             </select>
         </span>`;
+        refreshBatchFormSelect('bq-edit-role', { inline: true });
         const sel = document.getElementById('bq-edit-role');
+        const controls = container.querySelector('.bq-inline-edit-controls');
+        const roleReg = batchFormSelectMap['bq-edit-role'];
         if (sel) {
-            sel.focus();
+            focusBatchFormSelect('bq-edit-role');
             let cancelled = false;
-            sel.addEventListener('keydown', (e) => {
+            const onEscape = (e) => {
                 if (e.key === 'Escape') { cancelled = true; cancelAllInlineEdits(); }
-            });
+            };
+            sel.addEventListener('keydown', onEscape);
+            if (roleReg && roleReg.trigger) roleReg.trigger.addEventListener('keydown', onEscape);
             sel.addEventListener('change', () => { if (!cancelled) saveInlineRole(); });
-            sel.addEventListener('blur', () => { if (!cancelled) saveInlineRole(); });
+            bindBatchInlineEditFocusOut(controls, () => { if (!cancelled) saveInlineRole(); }, () => cancelled);
         }
     });
 }
@@ -2397,15 +2605,20 @@ function startInlineEditAgentMode() {
                 <option value="supervisor" ${currentMode === 'supervisor' ? 'selected' : ''}>${escapeHtml(_t('chat.agentModeSupervisorLabel'))}</option>
             </select>
         </span>`;
+        refreshBatchFormSelect('bq-edit-agentmode', { inline: true });
         const sel = document.getElementById('bq-edit-agentmode');
+        const controls = container.querySelector('.bq-inline-edit-controls');
+        const modeReg = batchFormSelectMap['bq-edit-agentmode'];
         if (sel) {
-            sel.focus();
+            focusBatchFormSelect('bq-edit-agentmode');
             let cancelled = false;
-            sel.addEventListener('keydown', (e) => {
+            const onEscape = (e) => {
                 if (e.key === 'Escape') { cancelled = true; cancelAllInlineEdits(); }
-            });
+            };
+            sel.addEventListener('keydown', onEscape);
+            if (modeReg && modeReg.trigger) modeReg.trigger.addEventListener('keydown', onEscape);
             sel.addEventListener('change', () => { if (!cancelled) saveInlineAgentMode(); });
-            sel.addEventListener('blur', () => { if (!cancelled) saveInlineAgentMode(); });
+            bindBatchInlineEditFocusOut(controls, () => { if (!cancelled) saveInlineAgentMode(); }, () => cancelled);
         }
     });
 }
@@ -2543,30 +2756,26 @@ function startInlineEditSchedule() {
         const queue = detail.queue;
         const isCron = queue.scheduleMode === 'cron';
         container.innerHTML = `<span class="bq-inline-edit-controls">
-            <select id="bq-edit-schedule-mode" onchange="toggleInlineScheduleCron()">
+            <select id="bq-edit-schedule-mode">
                 <option value="manual" ${!isCron ? 'selected' : ''}>${escapeHtml(_t('batchImportModal.scheduleModeManual'))}</option>
                 <option value="cron" ${isCron ? 'selected' : ''}>${escapeHtml(_t('batchImportModal.scheduleModeCron'))}</option>
             </select>
-            <input type="text" id="bq-edit-cron-expr" value="${escapeHtml(queue.cronExpr || '')}" placeholder="${_t('batchImportModal.cronExprPlaceholder', { interpolation: { escapeValue: false } })}" style="width:200px;${!isCron ? 'display:none;' : ''}" />
+            <input type="text" id="bq-edit-cron-expr" class="bq-edit-cron-expr" value="${escapeHtml(queue.cronExpr || '')}" placeholder="${_t('batchImportModal.cronExprPlaceholder', { interpolation: { escapeValue: false } })}" style="${!isCron ? 'display:none;' : ''}" />
         </span>`;
+        refreshBatchFormSelect('bq-edit-schedule-mode', { inline: true });
         let schedCancelled = false;
         const sel = document.getElementById('bq-edit-schedule-mode');
         const cronInp = document.getElementById('bq-edit-cron-expr');
+        const controls = container.querySelector('.bq-inline-edit-controls');
+        const schedReg = batchFormSelectMap['bq-edit-schedule-mode'];
+        const onSchedEscape = (e) => { if (e.key === 'Escape') { schedCancelled = true; cancelAllInlineEdits(); } };
         if (sel) {
-            sel.focus();
-            sel.addEventListener('keydown', (e) => { if (e.key === 'Escape') { schedCancelled = true; cancelAllInlineEdits(); } });
+            focusBatchFormSelect('bq-edit-schedule-mode');
+            sel.addEventListener('keydown', onSchedEscape);
+            if (schedReg && schedReg.trigger) schedReg.trigger.addEventListener('keydown', onSchedEscape);
             sel.addEventListener('change', () => {
                 toggleInlineScheduleCron();
-                // 切到 manual 时直接保存；切到 cron 时等用户输入表达式后 blur 保存
                 if (sel.value !== 'cron' && !schedCancelled) saveInlineSchedule();
-            });
-            sel.addEventListener('blur', (e) => {
-                // 如果焦点移到了 cron 输入框，不触发保存
-                setTimeout(() => {
-                    const active = document.activeElement;
-                    if (active && (active.id === 'bq-edit-cron-expr' || active.id === 'bq-edit-schedule-mode')) return;
-                    if (!schedCancelled) saveInlineSchedule();
-                }, 100);
             });
         }
         if (cronInp) {
@@ -2574,14 +2783,11 @@ function startInlineEditSchedule() {
                 if (e.key === 'Enter') { e.preventDefault(); cronInp.blur(); }
                 if (e.key === 'Escape') { schedCancelled = true; cancelAllInlineEdits(); }
             });
-            cronInp.addEventListener('blur', () => {
-                setTimeout(() => {
-                    const active = document.activeElement;
-                    if (active && (active.id === 'bq-edit-cron-expr' || active.id === 'bq-edit-schedule-mode')) return;
-                    if (!schedCancelled) saveInlineSchedule();
-                }, 100);
-            });
         }
+        bindBatchInlineEditFocusOut(controls, () => {
+            if (schedCancelled) return;
+            saveInlineSchedule();
+        }, () => schedCancelled);
     });
 }
 function toggleInlineScheduleCron() {
@@ -2675,6 +2881,7 @@ window.saveInlineSchedule = saveInlineSchedule;
 document.addEventListener('languagechange', function () {
     try {
         syncAllBatchQueuesFilterSelects();
+        syncAllBatchImportFormSelects();
         const tasksPage = document.getElementById('page-tasks');
         if (!tasksPage || !tasksPage.classList.contains('active')) {
             return;
@@ -2697,4 +2904,5 @@ document.addEventListener('languagechange', function () {
 
 document.addEventListener('DOMContentLoaded', function () {
     initBatchQueuesFilterSelects();
+    initBatchFormSelects();
 });
