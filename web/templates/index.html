@@ -39,9 +39,13 @@
                         <span class="brand-wordmark__core">CyberStrike</span><span class="brand-wordmark__ai">AI</span>
                     </span>
                 </h2>
-                <p class="login-subtitle" data-i18n="login.subtitle">请输入配置中的访问密码</p>
+                <p class="login-subtitle" data-i18n="login.subtitle">使用平台账号登录，默认管理员为 admin。</p>
             </div>
             <form id="login-form" class="login-form">
+                <div class="form-group">
+                    <label for="login-username" data-i18n="login.usernameLabel">用户名</label>
+                    <input type="text" id="login-username" placeholder="admin" autocomplete="username" data-i18n="login.usernamePlaceholder" data-i18n-attr="placeholder" />
+                </div>
                 <div class="form-group">
                     <label for="login-password" data-i18n="login.passwordLabel">密码</label>
                     <input type="password" id="login-password" placeholder="输入登录密码" required autocomplete="current-password" data-i18n="login.passwordPlaceholder" data-i18n-attr="placeholder" />
@@ -123,14 +127,29 @@
                             </div>
                         </div>
                         <div class="user-menu-container">
-                            <button class="user-avatar-btn" onclick="toggleUserMenu()" data-i18n="header.userMenu" data-i18n-attr="title" data-i18n-skip-text="true" title="用户菜单">
+                            <button id="user-avatar-btn" class="user-avatar-btn" onclick="toggleUserMenu()" data-i18n="header.userMenu" data-i18n-attr="title" data-i18n-skip-text="true" title="用户菜单" aria-haspopup="menu" aria-expanded="false" aria-controls="user-menu-dropdown">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                                     <circle cx="12" cy="7" r="4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                                 </svg>
                             </button>
-                            <div id="user-menu-dropdown" class="user-menu-dropdown" style="display: none;">
-                                <div class="user-menu-item" onclick="logout()">
+                            <div id="user-menu-dropdown" class="user-menu-dropdown" role="menu" style="display: none;">
+                                <div class="user-menu-profile" role="presentation">
+                                    <div class="user-menu-profile-row">
+                                        <div class="user-menu-profile-main">
+                                            <div id="user-menu-current-label" class="user-menu-profile-label" data-i18n="header.currentUser">当前用户</div>
+                                            <div id="user-menu-display-name" class="user-menu-profile-name">-</div>
+                                            <div id="user-menu-username" class="user-menu-profile-username">-</div>
+                                        </div>
+                                    </div>
+                                    <div class="user-menu-profile-meta" aria-labelledby="user-menu-current-label">
+                                        <span id="user-menu-scope" class="user-menu-profile-pill">-</span>
+                                        <span id="user-menu-roles" class="user-menu-profile-pill">-</span>
+                                        <span id="user-menu-permissions" class="user-menu-profile-pill">-</span>
+                                    </div>
+                                </div>
+                                <div class="user-menu-divider" role="separator"></div>
+                                <div class="user-menu-item" role="menuitem" tabindex="0" onclick="logout()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();logout();}">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                                         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                                         <polyline points="16 17 21 12 16 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -368,6 +387,21 @@
                             <div class="nav-submenu-item" data-page="roles-management" onclick="switchPage('roles-management')">
                                 <span data-i18n="nav.rolesManagement">角色管理</span>
                             </div>
+                        </div>
+                    </div>
+                    <div class="nav-item" data-page="platform-rbac">
+                        <div class="nav-item-content" data-title="平台权限" onclick="switchPage('platform-rbac')" data-i18n="nav.platformRbac" data-i18n-attr="data-title" data-i18n-skip-text="true">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="7.5" cy="14.5" r="3.5"></circle>
+                                <path d="M10.3 12.3 21 1.6"></path>
+                                <path d="m15 7 2 2"></path>
+                                <path d="m18 4 2 2"></path>
+                                <path d="M4 4h4"></path>
+                                <path d="M6 2v4"></path>
+                                <path d="M18 18h4"></path>
+                                <path d="M20 16v4"></path>
+                            </svg>
+                            <span data-i18n="nav.platformRbac">平台权限</span>
                         </div>
                     </div>
                     <div class="nav-item" data-page="settings">
@@ -4109,9 +4143,220 @@
                                     </div>
                                 </div>
                             </div>
+
                         </div>
                     </div>
                 </div>
+
+                <!-- 平台权限页面 -->
+                <div id="page-platform-rbac" class="page platform-rbac-page">
+                                <div class="page-header">
+                                    <div>
+                                        <h2 data-i18n="rbac.title">平台权限</h2>
+                                    </div>
+                                    <div class="page-header-actions">
+                                        <button class="btn-secondary" type="button" onclick="loadPlatformRbac()" data-i18n="common.refresh">刷新</button>
+                                        <button class="btn-secondary" type="button" onclick="openRbacRoleModal()" data-i18n="rbac.createRole">新建角色</button>
+                                        <button class="btn-primary" type="button" onclick="openRbacUserModal()" data-i18n="rbac.createUser">添加成员</button>
+                                    </div>
+                                </div>
+                                <div class="page-content">
+                                    <div class="rbac-topbar">
+                                        <div class="rbac-overview" id="rbac-overview">
+                                            <div class="rbac-metric rbac-metric-users">
+                                                <strong id="rbac-metric-users">0</strong>
+                                                <span data-i18n="rbac.metricUsersPill">个账号</span>
+                                            </div>
+                                            <div class="rbac-metric rbac-metric-enabled">
+                                                <strong id="rbac-metric-enabled">0</strong>
+                                                <span data-i18n="rbac.metricEnabledPill">个启用账号</span>
+                                            </div>
+                                            <div class="rbac-metric rbac-metric-roles">
+                                                <strong id="rbac-metric-roles">0</strong>
+                                                <span data-i18n="rbac.metricRolesPill">个角色</span>
+                                            </div>
+                                            <div class="rbac-metric rbac-metric-assignments">
+                                                <strong id="rbac-metric-assignments">0</strong>
+                                                <span data-i18n="rbac.metricAssignmentsPill">项授权</span>
+                                            </div>
+                                        </div>
+                                        <p id="rbac-metric-context" class="rbac-metric-context" hidden></p>
+                                        <div class="rbac-workspace-nav" role="tablist" aria-label="权限管理视图">
+                                            <button type="button" class="rbac-workspace-tab is-active" role="tab" aria-selected="true" data-rbac-view="users" onclick="switchRbacView('users')">
+                                                <span data-i18n="rbac.memberManagement">成员管理</span>
+                                                <small data-i18n="rbac.memberManagementHint">为成员分配角色与数据范围</small>
+                                            </button>
+                                            <button type="button" class="rbac-workspace-tab" role="tab" aria-selected="false" data-rbac-view="roles" onclick="switchRbacView('roles')">
+                                                <span data-i18n="rbac.roleManagement">角色管理</span>
+                                                <small data-i18n="rbac.roleManagementHint">定义权限集合与默认可见范围</small>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div id="rbac-view-users" class="rbac-workspace-view rbac-layout">
+                                        <section class="rbac-panel rbac-panel-users">
+                                            <div class="rbac-panel-head">
+                                                <div>
+                                                    <h3 data-i18n="rbac.users">用户</h3>
+                                                    <p class="rbac-muted" data-i18n="rbac.usersHint">按账号选择后管理角色与资源范围。</p>
+                                                </div>
+                                                <span id="rbac-users-count" class="rbac-count">0</span>
+                                            </div>
+                                            <div class="rbac-search">
+                                                <input id="rbac-user-search" class="form-input" type="search" placeholder="搜索用户名或显示名称" data-i18n="rbac.searchUsers" data-i18n-attr="placeholder" oninput="setRbacUserSearch(this.value)">
+                                            </div>
+                                            <div id="rbac-users-list" class="rbac-list">
+                                                <div class="loading-spinner" data-i18n="knowledgePage.loading">加载中...</div>
+                                            </div>
+                                        </section>
+                                        <section class="rbac-panel rbac-panel-detail">
+                                            <div class="rbac-detail-head">
+                                                <div>
+                                                    <h3 id="rbac-selected-title" data-i18n="rbac.selectUser">选择用户</h3>
+                                                    <p id="rbac-selected-subtitle" class="rbac-muted" data-i18n="rbac.selectUserHint">选择一个平台用户后编辑角色、状态与资源授权。</p>
+                                                </div>
+                                                <div class="rbac-detail-actions">
+                                                    <button class="btn-secondary btn-small btn-delete" type="button" id="rbac-delete-user-btn" onclick="deleteSelectedRbacUser()" disabled data-i18n="common.delete">删除</button>
+                                                    <button class="btn-primary btn-small" type="button" id="rbac-edit-user-btn" onclick="openRbacUserModalForSelected()" disabled data-i18n="common.edit">编辑</button>
+                                                </div>
+                                            </div>
+                                            <div id="rbac-selected-summary" class="rbac-selected-summary"></div>
+                                            <div id="rbac-effective-permissions" class="rbac-effective-permissions" hidden></div>
+                                            <div id="rbac-no-role-notice" class="rbac-no-role-notice" hidden></div>
+                                            <div class="rbac-tabs" role="tablist">
+                                                <button type="button" class="rbac-tab is-active" data-rbac-tab="roles" onclick="switchRbacTab('roles')" data-i18n="rbac.tabRoles">角色权限</button>
+                                                <button type="button" class="rbac-tab" data-rbac-tab="assignments" onclick="switchRbacTab('assignments')" data-i18n="rbac.tabAssignments">资源授权</button>
+                                                <button type="button" class="rbac-tab" data-rbac-tab="audit" onclick="switchRbacTab('audit')" data-i18n="rbac.tabAudit">变更记录</button>
+                                            </div>
+                                            <div id="rbac-tab-roles" class="rbac-tab-panel">
+                                                <div class="rbac-section-toolbar">
+                                                    <div>
+                                                        <strong data-i18n="rbac.roleMembership">角色成员关系</strong>
+                                                        <p class="rbac-muted" data-i18n="rbac.roleMembershipHint">角色决定能做什么，资源范围决定能看到哪些数据。</p>
+                                                    </div>
+                                                    <div class="rbac-role-save-actions">
+                                                        <span id="rbac-role-unsaved" class="rbac-unsaved-indicator" hidden data-i18n="rbac.unsavedChanges">有未保存的变更</span>
+                                                        <button id="rbac-role-reset-btn" class="btn-secondary btn-small" type="button" onclick="resetSelectedUserRoles()" disabled data-i18n="common.cancel">取消</button>
+                                                        <button id="rbac-role-apply-btn" class="btn-primary btn-small" type="button" onclick="saveSelectedUserRoles()" disabled data-i18n="rbac.saveRoleChanges">保存角色变更</button>
+                                                    </div>
+                                                </div>
+                                                <div id="rbac-roles-list" class="rbac-role-grid"></div>
+                                            </div>
+                                            <div id="rbac-tab-assignments" class="rbac-tab-panel" hidden>
+                                                <div class="rbac-assignment-controls">
+                                                <div class="rbac-assignment-toolbar">
+                                                    <div class="rbac-assignment-toolbar-main">
+                                                        <div class="rbac-assignment-field">
+                                                            <label for="rbac-assignment-type" data-i18n="rbac.resourceType">资源类型</label>
+                                                            <select id="rbac-assignment-type" class="form-select rbac-form-select" onchange="changeRbacResourceType()">
+                                                                <option value="conversation" data-i18n="rbac.resourceTypes.conversation">对话</option>
+                                                                <option value="project" data-i18n="rbac.resourceTypes.project">项目</option>
+                                                                <option value="batch_task" data-i18n="rbac.resourceTypes.batch_task">批量任务</option>
+                                                                <option value="vulnerability" data-i18n="rbac.resourceTypes.vulnerability">漏洞</option>
+                                                                <option value="webshell" data-i18n="rbac.resourceTypes.webshell">WebShell 连接</option>
+                                                                <option value="c2_listener" data-i18n="rbac.resourceTypes.c2_listener">C2 监听器</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="rbac-assignment-field rbac-assignment-field--search">
+                                                            <label for="rbac-resource-search" data-i18n="rbac.searchResource">搜索真实资源</label>
+                                                            <input id="rbac-resource-search" class="form-input" type="search" placeholder="按名称或 ID 搜索" data-i18n="rbac.searchResourcePlaceholder" data-i18n-attr="placeholder" oninput="queueRbacResourceSearch(this.value)">
+                                                        </div>
+                                                    </div>
+                                                    <details class="rbac-advanced-assignment rbac-advanced-assignment--inline">
+                                                        <summary data-i18n="rbac.advancedAssignment">高级：直接输入资源 ID</summary>
+                                                        <div class="rbac-advanced-assignment-body">
+                                                            <input id="rbac-assignment-id" class="form-input" type="text" placeholder="输入资源 ID；多个 ID 用逗号分隔" data-i18n="rbac.resourceIdPlaceholder" data-i18n-attr="placeholder" oninput="syncRbacAssignmentSubmit()">
+                                                            <span data-i18n="rbac.advancedAssignmentHint">适用于从日志或 API 复制的已知 ID，提交时仍会验证资源是否存在。</span>
+                                                        </div>
+                                                    </details>
+                                                </div>
+                                                <p class="rbac-assignment-help" data-i18n="rbac.assignmentHelp">仅“指定资源”范围的角色需要单独授权。项目授权会覆盖该项目下的对话和漏洞。</p>
+                                                </div>
+                                                <div id="rbac-pending-bar" class="rbac-pending-bar" hidden>
+                                                    <div class="rbac-pending-bar-head">
+                                                        <strong id="rbac-pending-title" data-i18n="rbac.pendingGrants">待授权</strong>
+                                                        <span id="rbac-pending-count" class="rbac-pill is-info">0</span>
+                                                    </div>
+                                                    <div id="rbac-pending-list" class="rbac-pending-list"></div>
+                                                    <div class="rbac-pending-bar-actions">
+                                                        <button type="button" class="btn-secondary btn-small" onclick="clearRbacResourceSelection()" data-i18n="rbac.clearSelection">清空选择</button>
+                                                        <button type="button" class="btn-primary btn-small" onclick="createRbacAssignment()" data-i18n="rbac.confirmGrant">确认授权</button>
+                                                    </div>
+                                                </div>
+                                                <div class="rbac-assignment-columns">
+                                                    <section class="rbac-resource-section">
+                                                        <div class="rbac-resource-section-head">
+                                                            <div>
+                                                                <strong data-i18n="rbac.availableResources">可授权资源</strong>
+                                                                <span data-i18n="rbac.availableResourcesHint">勾选当前页资源，可跨页累计选择</span>
+                                                            </div>
+                                                        </div>
+                                                        <div id="rbac-resource-picker" class="rbac-resource-picker"></div>
+                                                        <div id="rbac-resource-pagination" class="rbac-pagination">
+                                                            <button type="button" class="btn-secondary btn-small" data-rbac-page-previous onclick="changeRbacResourcePage(-1)" data-i18n="rbac.pagination.previous">上一页</button>
+                                                            <span data-rbac-page-info>第 1 页</span>
+                                                            <button type="button" class="btn-secondary btn-small" data-rbac-page-next onclick="changeRbacResourcePage(1)" data-i18n="rbac.pagination.next">下一页</button>
+                                                        </div>
+                                                    </section>
+                                                    <section class="rbac-resource-section">
+                                                        <div class="rbac-resource-section-head">
+                                                            <div>
+                                                                <strong data-i18n="rbac.currentAssignments">当前单独授权</strong>
+                                                                <span><span id="rbac-current-assignment-count">0</span> <span data-i18n="rbac.items">项</span></span>
+                                                            </div>
+                                                            <div class="rbac-assignment-filters">
+                                                                <select id="rbac-assignment-filter-type" class="form-select rbac-form-select" onchange="changeRbacAssignmentFilter(this.value)" aria-label="筛选资源类型">
+                                                                    <option value="all" data-i18n="rbac.allResourceTypes">全部类型</option>
+                                                                    <option value="conversation" data-i18n="rbac.resourceTypes.conversation">对话</option>
+                                                                    <option value="project" data-i18n="rbac.resourceTypes.project">项目</option>
+                                                                    <option value="batch_task" data-i18n="rbac.resourceTypes.batch_task">批量任务</option>
+                                                                    <option value="vulnerability" data-i18n="rbac.resourceTypes.vulnerability">漏洞</option>
+                                                                    <option value="webshell" data-i18n="rbac.resourceTypes.webshell">WebShell 连接</option>
+                                                                    <option value="c2_listener" data-i18n="rbac.resourceTypes.c2_listener">C2 监听器</option>
+                                                                </select>
+                                                                <input id="rbac-assignment-search" class="form-input" type="search" placeholder="搜索已授权资源名称或 ID" data-i18n="rbac.searchAssignments" data-i18n-attr="placeholder" oninput="filterRbacAssignments(this.value)">
+                                                            </div>
+                                                        </div>
+                                                        <div id="rbac-assignments-list" class="rbac-assignments-list"></div>
+                                                        <div id="rbac-assignment-pagination" class="rbac-pagination">
+                                                            <button type="button" class="btn-secondary btn-small" data-rbac-page-previous onclick="changeRbacAssignmentPage(-1)" data-i18n="rbac.pagination.previous">上一页</button>
+                                                            <span data-rbac-page-info></span>
+                                                            <button type="button" class="btn-secondary btn-small" data-rbac-page-next onclick="changeRbacAssignmentPage(1)" data-i18n="rbac.pagination.next">下一页</button>
+                                                        </div>
+                                                    </section>
+                                                </div>
+                                            </div>
+                                            <div id="rbac-tab-audit" class="rbac-tab-panel" hidden>
+                                                <div class="rbac-section-toolbar">
+                                                    <div>
+                                                        <strong data-i18n="rbac.auditTitle">权限变更记录</strong>
+                                                        <p class="rbac-muted" data-i18n="rbac.auditHint">展示该成员相关的平台权限操作审计。</p>
+                                                    </div>
+                                                    <button type="button" class="btn-secondary btn-small" onclick="loadRbacUserAuditLogs()" data-i18n="common.refresh">刷新</button>
+                                                </div>
+                                                <div id="rbac-audit-list" class="rbac-audit-list">
+                                                    <div class="rbac-empty"><strong data-i18n="rbac.empty.selectUserFirst">请先选择用户</strong></div>
+                                                </div>
+                                            </div>
+                                        </section>
+                                    </div>
+                                    <div id="rbac-view-roles" class="rbac-workspace-view rbac-role-management" hidden>
+                                        <div class="rbac-role-management-head">
+                                            <div>
+                                                <h3 data-i18n="rbac.roleCatalog">角色目录</h3>
+                                                <p class="rbac-muted" data-i18n="rbac.roleCatalogHint">先定义角色的操作权限与资源范围，再分配给成员。</p>
+                                            </div>
+                                            <div class="rbac-role-management-actions">
+                                                <div class="rbac-toolbar-search">
+                                                    <label for="rbac-role-search" data-i18n="rbac.filterRoles">筛选角色</label>
+                                                    <input id="rbac-role-search" class="form-input" type="search" placeholder="搜索角色或权限" data-i18n="rbac.searchRoles" data-i18n-attr="placeholder" oninput="setRbacRoleSearch(this.value)">
+                                                </div>
+                                                <button class="btn-primary btn-small" type="button" onclick="openRbacRoleModal()" data-i18n="rbac.createRole">新建角色</button>
+                                            </div>
+                                        </div>
+                                        <div id="rbac-role-catalog" class="rbac-role-catalog"></div>
+                                    </div>
+                                </div>
+                            </div>
             </div>
         </div>
     </div>
@@ -5231,6 +5476,93 @@
         </div>
     </div>
 
+    <div id="rbac-user-modal" class="modal">
+        <div class="modal-content" style="max-width: 640px;">
+            <div class="modal-header">
+                <h2 id="rbac-user-modal-title" data-i18n="rbac.userModalTitle">平台用户</h2>
+                <span class="modal-close" onclick="closeRbacUserModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="rbac-user-id">
+                <div class="form-group">
+                    <label for="rbac-username" data-i18n="rbac.username">用户名</label>
+                    <input type="text" id="rbac-username" class="form-input" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="rbac-display-name" data-i18n="rbac.displayName">显示名称</label>
+                    <input type="text" id="rbac-display-name" class="form-input" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="rbac-password" data-i18n="rbac.password">密码</label>
+                    <input type="password" id="rbac-password" class="form-input" autocomplete="new-password" placeholder="编辑时留空表示不修改" data-i18n="rbac.passwordPlaceholder" data-i18n-attr="placeholder">
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="rbac-user-enabled" class="modern-checkbox" checked>
+                        <span class="checkbox-custom"></span>
+                        <span class="checkbox-text" data-i18n="rbac.enabled">启用账号</span>
+                    </label>
+                </div>
+                <div class="form-group" id="rbac-user-roles-create-section">
+                    <label data-i18n="rbac.roles">角色</label>
+                    <div id="rbac-user-role-checkboxes" class="rbac-checkbox-grid"></div>
+                </div>
+                <div class="form-group" id="rbac-user-roles-edit-section" hidden>
+                    <label data-i18n="rbac.roles">角色</label>
+                    <div id="rbac-user-roles-readonly" class="rbac-user-roles-readonly"></div>
+                    <p class="rbac-field-hint" data-i18n="rbac.editUserRolesHint">角色请在成员详情页的「角色权限」标签中统一管理。</p>
+                    <button type="button" class="btn-secondary btn-small" onclick="openRbacRolesFromUserModal()" data-i18n="rbac.assignRolesNow">去分配角色</button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" type="button" onclick="closeRbacUserModal()" data-i18n="common.cancel">取消</button>
+                <button class="btn-primary" type="button" onclick="saveRbacUser()" data-i18n="common.save">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="rbac-role-modal" class="modal">
+        <div class="modal-content" style="max-width: 840px;">
+            <div class="modal-header">
+                <h2 id="rbac-role-modal-title" data-i18n="rbac.roleModalTitle">平台角色</h2>
+                <span class="modal-close" onclick="closeRbacRoleModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="rbac-role-id">
+                <div class="form-group">
+                    <label for="rbac-role-name" data-i18n="rbac.roleName">角色名称</label>
+                    <input type="text" id="rbac-role-name" class="form-input" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="rbac-role-description" data-i18n="rbac.description">描述</label>
+                    <input type="text" id="rbac-role-description" class="form-input" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="rbac-role-scope" data-i18n="rbac.scope">资源范围</label>
+                    <select id="rbac-role-scope" class="form-select rbac-form-select">
+                        <option value="all" data-i18n="rbac.scopes.all.option">全部资源 — 可访问平台内所有数据</option>
+                        <option value="assigned" data-i18n="rbac.scopes.assigned.option">指定资源 — 仅访问管理员授权的数据</option>
+                        <option value="own" data-i18n="rbac.scopes.own.option">本人创建 — 仅访问自己创建的数据</option>
+                    </select>
+                    <p id="rbac-role-scope-hint" class="rbac-field-hint" data-i18n="rbac.scopeHint">资源范围与操作权限共同决定最终访问能力。</p>
+                </div>
+                <div class="form-group">
+                    <label data-i18n="rbac.permissions">权限</label>
+                    <div class="rbac-permission-tools">
+                        <input id="rbac-permission-search" class="form-input" type="search" placeholder="搜索权限，例如 project:read" data-i18n="rbac.searchPermissions" data-i18n-attr="placeholder" oninput="filterRbacPermissions(this.value)">
+                        <button class="btn-secondary btn-small" type="button" onclick="selectVisibleRbacPermissions(true)" data-i18n="rbac.selectVisible">选择可见</button>
+                        <button class="btn-secondary btn-small" type="button" onclick="selectVisibleRbacPermissions(false)" data-i18n="rbac.clearVisible">清空可见</button>
+                    </div>
+                    <div id="rbac-permission-checkboxes" class="rbac-permission-groups"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" type="button" onclick="closeRbacRoleModal()" data-i18n="common.cancel">取消</button>
+                <button class="btn-primary" id="rbac-role-save-btn" type="button" onclick="saveRbacRole()" data-i18n="common.save">保存</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 项目管理弹窗（挂 body 下，避免被 .page overflow 裁剪） -->
     <div id="project-modal" class="modal-overlay projects-modal-overlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="project-modal-title" onclick="if(event.target===this)closeProjectModal()">
         <div class="projects-modal-dialog" onclick="event.stopPropagation()">
@@ -5396,6 +5728,7 @@
     <script src="/static/js/tasks.js"></script>
     <script src="/static/js/workflows.js"></script>
     <script src="/static/js/roles.js"></script>
+    <script src="/static/js/rbac.js"></script>
     <script src="/static/js/c2.js"></script>
 </body>
 </html>

@@ -2458,6 +2458,32 @@ function syncProcessDetailButtonLabels(messageId, expanded) {
     });
 }
 
+/** 懒加载占位提示可点击，与工具栏「展开详情」行为一致 */
+function bindProcessDetailsLazyHint(hostEl, messageId) {
+    if (!hostEl || !messageId) return;
+    const emptyEl = hostEl.classList && hostEl.classList.contains('progress-timeline-empty')
+        ? hostEl
+        : hostEl.querySelector('.progress-timeline-empty');
+    if (!emptyEl || emptyEl.dataset.lazyHintBound === '1') return;
+    emptyEl.dataset.lazyHintBound = '1';
+    emptyEl.classList.add('progress-timeline-lazy-clickable');
+    emptyEl.setAttribute('role', 'button');
+    emptyEl.setAttribute('tabindex', '0');
+    const activate = () => {
+        if (typeof toggleProcessDetails === 'function') {
+            toggleProcessDetails(null, messageId);
+        }
+    };
+    emptyEl.addEventListener('click', activate);
+    emptyEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            activate();
+        }
+    });
+}
+window.bindProcessDetailsLazyHint = bindProcessDetailsLazyHint;
+
 // 渲染过程详情
 // options.append=true 时分页追加；options.markLoaded=false 时保留 lazy 标记（分页加载中）
 function renderProcessDetails(messageId, processDetails, options) {
@@ -2465,6 +2491,13 @@ function renderProcessDetails(messageId, processDetails, options) {
     const appendMode = !!renderOpts.append;
     const prependMode = !!renderOpts.prepend;
     const markLoaded = renderOpts.markLoaded !== false;
+    const toolStatusByProcessDetailId = new Map();
+    if (Array.isArray(renderOpts.toolExecutions)) {
+        renderOpts.toolExecutions.forEach((execution) => {
+            if (!execution || !execution.processDetailId) return;
+            toolStatusByProcessDetailId.set(String(execution.processDetailId), String(execution.status || '').toLowerCase());
+        });
+    }
     const messageElement = document.getElementById(messageId);
     if (!messageElement) {
         return;
@@ -2529,6 +2562,7 @@ function renderProcessDetails(messageId, processDetails, options) {
         const expandLabel = typeof window.t === 'function' ? window.t('chat.expandDetail') : '展开详情';
         let lazyHint = expandLabel + '（点击后加载迭代详情）';
         timeline.innerHTML = '<div class="progress-timeline-empty">' + lazyHint + '</div>';
+        bindProcessDetailsLazyHint(timeline, messageId);
         timeline.classList.remove('expanded');
         prefetchProcessDetailsSummaryHint(messageId, messageElement);
         return;
@@ -2725,6 +2759,9 @@ function renderProcessDetails(messageId, processDetails, options) {
             processDetailId: detail.id || '',
             createdAt: detail.createdAt
         };
+        if (eventType === 'tool_call' && detail.id && toolStatusByProcessDetailId.has(String(detail.id))) {
+            timelineOpts.toolStatus = toolStatusByProcessDetailId.get(String(detail.id));
+        }
         if (eventType === 'tool_call' && data._mergedResult) {
             timelineOpts.mergedResult = data._mergedResult;
         }
@@ -2781,6 +2818,7 @@ function finishProcessDetailsRender(messageElement, processDetails, isLazyNotLoa
         lazyHint.textContent = (typeof window.t === 'function' ? window.t('chat.expandDetail') : '展开详情') +
             '（点击后加载完整过程详情）';
         timeline.appendChild(lazyHint);
+        bindProcessDetailsLazyHint(lazyHint, messageElement.id);
     }
     
     const hasPendingHitlInDetails = processDetails.some(d => d && d.eventType === 'hitl_interrupt');
@@ -2841,6 +2879,7 @@ function prefetchProcessDetailsSummaryHint(messageId, messageElement) {
             const empty = timeline.querySelector('.progress-timeline-empty');
             if (empty) {
                 empty.textContent = hint;
+                bindProcessDetailsLazyHint(timeline, messageId);
             }
         })
         .catch(() => {});
@@ -2999,15 +3038,41 @@ function normalizeToolExecutionSummaryForButton(raw) {
     };
 }
 
-function setPendingToolExecutionSummaries(messageElement, summaries) {
-    if (!messageElement || !messageElement.dataset || !Array.isArray(summaries)) return;
+function cacheToolExecutionSummaries(messageElement, summaries) {
+    if (!messageElement || !messageElement.dataset || !Array.isArray(summaries)) return [];
     const normalized = summaries
         .map(normalizeToolExecutionSummaryForButton)
         .filter((item) => item.toolName || item.executionId || item.toolCallId);
     if (normalized.length > 0) {
+        messageElement.dataset.toolExecutionSummaries = JSON.stringify(normalized);
+    }
+    return normalized;
+}
+
+function getCachedToolExecutionSummaries(messageElement) {
+    if (!messageElement || !messageElement.dataset || !messageElement.dataset.toolExecutionSummaries) return [];
+    try {
+        const parsed = JSON.parse(messageElement.dataset.toolExecutionSummaries);
+        return Array.isArray(parsed) ? parsed.map(normalizeToolExecutionSummaryForButton) : [];
+    } catch (e) {
+        delete messageElement.dataset.toolExecutionSummaries;
+        return [];
+    }
+}
+
+function setPendingToolExecutionSummaries(messageElement, summaries) {
+    if (!messageElement || !messageElement.dataset || !Array.isArray(summaries)) return;
+    const normalized = cacheToolExecutionSummaries(messageElement, summaries);
+    if (normalized.length > 0) {
         messageElement.dataset.pendingToolExecutionSummaries = JSON.stringify(normalized);
     } else {
         delete messageElement.dataset.pendingToolExecutionSummaries;
+    }
+    const renderedToolList = messageElement.querySelector('.mcp-tool-list');
+    if (normalized.length > 0 && renderedToolList && renderedToolList.querySelector('.mcp-detail-btn[data-exec-id], .mcp-detail-btn[data-tool-summary]')) {
+        appendMcpCallSummaryButtons(messageElement, normalized);
+        delete messageElement.dataset.pendingToolExecutionSummaries;
+        delete messageElement.dataset.pendingMcpExecutionIds;
     }
     if (typeof syncMcpToolsToggleButton === 'function') {
         syncMcpToolsToggleButton(messageElement);
@@ -3202,6 +3267,34 @@ async function focusToolExecutionInProcessDetails(messageElement, summary, index
     }, 2200);
 }
 
+async function resolveToolExecutionSummaryForFocus(messageElement, executionId, index) {
+    const wantedExecutionId = executionId == null ? '' : String(executionId).trim();
+    let summaries = getCachedToolExecutionSummaries(messageElement);
+    let item = wantedExecutionId
+        ? summaries.find((summary) => summary.executionId === wantedExecutionId)
+        : summaries[index];
+    if (item && (item.processDetailId || item.toolCallId)) return item;
+
+    const backendId = messageElement && messageElement.dataset
+        ? String(messageElement.dataset.backendMessageId || '').trim()
+        : '';
+    if (!backendId || typeof apiFetch !== 'function') return item || null;
+    try {
+        const res = await apiFetch('/api/messages/' + encodeURIComponent(backendId) + '/process-details?summary=1');
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok || !payload.summary || !Array.isArray(payload.summary.toolExecutions)) {
+            return item || null;
+        }
+        summaries = cacheToolExecutionSummaries(messageElement, payload.summary.toolExecutions);
+        item = wantedExecutionId
+            ? summaries.find((summary) => summary.executionId === wantedExecutionId)
+            : summaries[index];
+        return item || null;
+    } catch (e) {
+        return item || null;
+    }
+}
+
 function toggleMcpToolList(assistantMessageId) {
     const messageEl = document.getElementById(assistantMessageId);
     if (!messageEl) return;
@@ -3255,7 +3348,14 @@ function appendMcpCallButtons(messageElement, executionIds) {
         detailBtn.dataset.execId = execId;
         detailBtn.dataset.execIndex = String(index + 1);
         detailBtn.innerHTML = '<span>' + (typeof window.t === 'function' ? window.t('chat.callNumber', { n: index + 1 }) : '调用 #' + (index + 1)) + '</span>';
-        detailBtn.onclick = () => showMCPDetail(execId);
+        detailBtn.onclick = async () => {
+            const summary = await resolveToolExecutionSummaryForFocus(messageElement, execId, index);
+            if (summary && (summary.processDetailId || summary.toolCallId)) {
+                await focusToolExecutionInProcessDetails(messageElement, summary, index);
+                return;
+            }
+            showMCPDetail(execId);
+        };
         toolList.appendChild(detailBtn);
     });
     batchUpdateButtonToolNames(toolList, executionIds);
@@ -3273,10 +3373,16 @@ function appendMcpCallSummaryButtons(messageElement, summaries) {
         const item = normalizeToolExecutionSummaryForButton(raw);
         const key = item.executionId || item.toolCallId || `${item.toolName || 'tool'}-${index + 1}`;
         const selector = '.mcp-detail-btn[data-tool-summary="' + CSS.escape(String(key)) + '"]';
-        if (toolList.querySelector(selector) || (item.executionId && toolList.querySelector('.mcp-detail-btn[data-exec-id="' + CSS.escape(String(item.executionId)) + '"]'))) {
+        const existingSummaryBtn = toolList.querySelector(selector);
+        const existingExecBtn = item.executionId
+            ? toolList.querySelector('.mcp-detail-btn[data-exec-id="' + CSS.escape(String(item.executionId)) + '"]')
+            : null;
+        if (existingSummaryBtn) {
             return;
         }
-        const btn = document.createElement('button');
+        // 历史会话可能先按 executionId 渲染旧按钮，随后摘要才异步到达。
+        // 复用并升级该按钮，避免它永久保留“只看执行详情、不定位上下文”的旧处理器。
+        const btn = existingExecBtn || document.createElement('button');
         btn.className = 'mcp-detail-btn';
         btn.dataset.toolSummary = key;
         if (item.executionId) {
@@ -3294,7 +3400,9 @@ function appendMcpCallSummaryButtons(messageElement, summaries) {
             };
         }
         renderToolExecutionButtonContent(btn, item.toolName || (typeof window.t === 'function' ? window.t('chat.unknownTool') : '未知工具'), String(index + 1), item.status);
-        toolList.appendChild(btn);
+        if (!existingExecBtn) {
+            toolList.appendChild(btn);
+        }
     });
     syncMcpToolsToggleButton(messageElement);
 }
@@ -3363,7 +3471,8 @@ function getToolExecutionStatusLabel(status) {
             failed: 'mcpMonitor.statusFailed',
             running: 'mcpMonitor.statusRunning',
             cancelled: 'mcpMonitor.statusCancelled',
-            pending: 'mcpMonitor.statusPending'
+            pending: 'mcpMonitor.statusPending',
+            result_missing: 'timeline.resultMissing'
         };
         const key = keyMap[normalized];
         if (key) {
@@ -3376,7 +3485,8 @@ function getToolExecutionStatusLabel(status) {
         failed: '失败',
         running: '运行中',
         cancelled: '已取消',
-        pending: '等待中'
+        pending: '等待中',
+        result_missing: '结果记录缺失'
     };
     return fallback[normalized] || '';
 }

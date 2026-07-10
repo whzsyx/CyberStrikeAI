@@ -509,6 +509,13 @@ function syncC2NavFromConfig(cfg) {
 
 // 切换设置分类
 function switchSettingsSection(section) {
+    if (section === 'rbac') {
+        if (typeof switchPage === 'function') {
+            switchPage('platform-rbac');
+        }
+        return;
+    }
+
     // 更新导航项状态
     document.querySelectorAll('.settings-nav-item').forEach(item => {
         item.classList.remove('active');
@@ -3660,3 +3667,6 @@ document.addEventListener('languagechange', function () {
         console.warn('languagechange MCP refresh failed', e);
     }
 });
+
+window.initSettingsCustomSelects = initSettingsCustomSelects;
+window.refreshSettingsCustomSelects = refreshSettingsCustomSelects;

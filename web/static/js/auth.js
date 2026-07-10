@@ -1,6 +1,10 @@
 const AUTH_STORAGE_KEY = 'cyberstrike-auth';
 let authToken = null;
 let authTokenExpiry = null;
+let authUser = null;
+let authRoles = [];
+let authPermissions = new Set();
+let authScope = '';
 let authPromise = null;
 let authPromiseResolvers = [];
 let isAppInitialized = false;
@@ -9,28 +13,42 @@ function isTokenValid() {
     return !!authToken && authTokenExpiry instanceof Date && authTokenExpiry.getTime() > Date.now();
 }
 
-function saveAuth(token, expiresAt) {
+function saveAuth(token, expiresAt, meta = {}) {
     const expiry = expiresAt instanceof Date ? expiresAt : new Date(expiresAt);
     authToken = token;
     authTokenExpiry = expiry;
+    authUser = meta.user || null;
+    authRoles = Array.isArray(meta.roles) ? meta.roles : [];
+    authPermissions = new Set(Array.isArray(meta.permissions) ? meta.permissions : []);
+    authScope = meta.scope || '';
     try {
         localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({
             token,
             expiresAt: expiry.toISOString(),
+            user: authUser,
+            roles: authRoles,
+            permissions: Array.from(authPermissions),
+            scope: authScope,
         }));
     } catch (error) {
         console.warn('无法持久化认证信息:', error);
     }
+    renderUserMenuProfile();
 }
 
 function clearAuthStorage() {
     authToken = null;
     authTokenExpiry = null;
+    authUser = null;
+    authRoles = [];
+    authPermissions = new Set();
+    authScope = '';
     try {
         localStorage.removeItem(AUTH_STORAGE_KEY);
     } catch (error) {
         console.warn('无法清除认证信息:', error);
     }
+    renderUserMenuProfile();
 }
 
 function loadAuthFromStorage() {
@@ -51,6 +69,10 @@ function loadAuthFromStorage() {
         }
         authToken = stored.token;
         authTokenExpiry = expiry;
+        authUser = stored.user || null;
+        authRoles = Array.isArray(stored.roles) ? stored.roles : [];
+        authPermissions = new Set(Array.isArray(stored.permissions) ? stored.permissions : []);
+        authScope = stored.scope || '';
         return isTokenValid();
     } catch (error) {
         console.error('读取认证信息失败:', error);
@@ -68,6 +90,7 @@ function resolveAuthPromises(success) {
 function showLoginOverlay(message = '') {
     const overlay = document.getElementById('login-overlay');
     const errorBox = document.getElementById('login-error');
+    const usernameInput = document.getElementById('login-username');
     const passwordInput = document.getElementById('login-password');
     if (!overlay) {
         return;
@@ -83,7 +106,9 @@ function showLoginOverlay(message = '') {
         }
     }
     setTimeout(function () {
-        if (passwordInput) {
+        if (usernameInput && !usernameInput.value) {
+            usernameInput.focus();
+        } else if (passwordInput) {
             passwordInput.focus();
         }
     }, 100);
@@ -92,6 +117,7 @@ function showLoginOverlay(message = '') {
 function hideLoginOverlay() {
     const overlay = document.getElementById('login-overlay');
     const errorBox = document.getElementById('login-error');
+    const usernameInput = document.getElementById('login-username');
     const passwordInput = document.getElementById('login-password');
     closeAppModal('login-overlay');
     if (errorBox) {
@@ -100,6 +126,9 @@ function hideLoginOverlay() {
     }
     if (passwordInput) {
         passwordInput.value = '';
+    }
+    if (usernameInput && !authUser) {
+        usernameInput.value = '';
     }
 }
 
@@ -158,6 +187,13 @@ async function apiFetch(url, options = {}) {
             : '未授权访问';
         throw new Error(msg);
     }
+    if (response.status === 403) {
+        const result = await response.clone().json().catch(() => ({}));
+        const msg = result.error || (typeof window !== 'undefined' && typeof window.t === 'function'
+            ? window.t('auth.forbidden')
+            : '权限不足');
+        throw new Error(msg);
+    }
     return response;
 }
 
@@ -211,6 +247,7 @@ async function apiUploadWithProgress(url, formData, options = {}) {
 
 async function submitLogin(event) {
     event.preventDefault();
+    const usernameInput = document.getElementById('login-username');
     const passwordInput = document.getElementById('login-password');
     const errorBox = document.getElementById('login-error');
     const submitBtn = document.querySelector('.login-submit');
@@ -219,6 +256,7 @@ async function submitLogin(event) {
         return;
     }
 
+    const username = usernameInput ? usernameInput.value.trim() : '';
     const password = passwordInput.value.trim();
     if (!password) {
         if (errorBox) {
@@ -241,7 +279,7 @@ async function submitLogin(event) {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ password }),
+            body: JSON.stringify({ username, password }),
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok || !result.token) {
@@ -255,8 +293,14 @@ async function submitLogin(event) {
             return;
         }
 
-        saveAuth(result.token, result.expires_at);
+        saveAuth(result.token, result.expires_at, {
+            user: result.user,
+            roles: result.roles,
+            permissions: result.permissions,
+            scope: result.scope,
+        });
         hideLoginOverlay();
+        applyRBACToUI();
         resolveAuthPromises(true);
         if (!isAppInitialized) {
             await bootstrapApp();
@@ -306,7 +350,149 @@ async function bootstrapApp() {
         initializeChatUI();
         isAppInitialized = true;
     }
+    applyRBACToUI();
     await refreshAppData();
+}
+
+const PAGE_PERMISSION_MAP = {
+    dashboard: 'dashboard:read',
+    chat: 'chat:read',
+    hitl: 'hitl:read',
+    'info-collect': 'fofa:execute',
+    tasks: 'tasks:read',
+    workflows: 'workflow:read',
+    projects: 'project:read',
+    vulnerabilities: 'vulnerability:read',
+    'chat-files': 'files:read',
+    webshell: 'webshell:read',
+    c2: 'c2:read',
+    'c2-listeners': 'c2:read',
+    'c2-sessions': 'c2:read',
+    'c2-tasks': 'c2:read',
+    'c2-payloads': 'c2:read',
+    'c2-events': 'c2:read',
+    'c2-profiles': 'c2:read',
+    mcp: 'mcp:read',
+    'mcp-monitor': 'monitor:read',
+    'mcp-management': 'mcp:read',
+    knowledge: 'knowledge:read',
+    'knowledge-retrieval-logs': 'knowledge:read',
+    'knowledge-management': 'knowledge:read',
+    skills: 'skills:read',
+    'skills-monitor': 'skills:read',
+    'skills-management': 'skills:read',
+    agents: 'agents:read',
+    'agents-management': 'agents:read',
+    roles: 'roles:read',
+    'roles-management': 'roles:read',
+    'platform-rbac': 'rbac:read',
+    settings: 'config:read',
+};
+
+function hasPermission(permission) {
+    return !permission || authPermissions.has(permission);
+}
+
+function applyRBACToUI() {
+    document.querySelectorAll('[data-page]').forEach((el) => {
+        const page = el.getAttribute('data-page');
+        const permission = PAGE_PERMISSION_MAP[page];
+        if (!permission) return;
+        const allowed = hasPermission(permission);
+        el.hidden = !allowed;
+        el.setAttribute('aria-hidden', allowed ? 'false' : 'true');
+    });
+    const userAvatar = document.querySelector('.user-avatar-btn');
+    if (userAvatar && authUser && authUser.username) {
+        const displayName = getAuthDisplayName();
+        userAvatar.setAttribute('title', displayName);
+        userAvatar.setAttribute('aria-label', authT('header.userMenuFor', '用户菜单：{{name}}', { name: displayName }));
+    }
+    renderUserMenuProfile();
+}
+
+function authT(key, fallback, opts = {}) {
+    if (typeof window !== 'undefined' && typeof window.t === 'function') {
+        const translated = window.t(key, opts);
+        if (translated && translated !== key) {
+            return translated;
+        }
+    }
+    return fallback.replace(/\{\{\s*(\w+)\s*\}\}/g, function (_, name) {
+        return Object.prototype.hasOwnProperty.call(opts, name) ? String(opts[name]) : '';
+    });
+}
+
+function getAuthDisplayName() {
+    if (!authUser) {
+        return authT('header.unknownUser', '未知用户');
+    }
+    return String(authUser.display_name || authUser.displayName || authUser.username || '').trim()
+        || authT('header.unknownUser', '未知用户');
+}
+
+function getAuthUsername() {
+    if (!authUser) {
+        return '-';
+    }
+    const username = String(authUser.username || '').trim();
+    return username ? `@${username}` : '-';
+}
+
+function getScopeLabel(scope) {
+    const normalized = String(scope || '').trim().toLowerCase();
+    const keyMap = {
+        all: 'header.scopeAll',
+        assigned: 'header.scopeAssigned',
+        own: 'header.scopeOwn',
+    };
+    const fallbackMap = {
+        all: '全部资源',
+        assigned: '指定资源',
+        own: '自己的资源',
+    };
+    const key = keyMap[normalized] || 'header.scopeUnknown';
+    const fallback = fallbackMap[normalized] || '资源范围未知';
+    return authT(key, fallback);
+}
+
+function renderUserMenuProfile() {
+    const displayNameEl = document.getElementById('user-menu-display-name');
+    const usernameEl = document.getElementById('user-menu-username');
+    const scopeEl = document.getElementById('user-menu-scope');
+    const rolesEl = document.getElementById('user-menu-roles');
+    const permissionsEl = document.getElementById('user-menu-permissions');
+    const avatarBtn = document.getElementById('user-avatar-btn') || document.querySelector('.user-avatar-btn');
+
+    const displayName = getAuthDisplayName();
+    const roleCount = Array.isArray(authRoles) ? authRoles.length : 0;
+    const permissionCount = authPermissions instanceof Set ? authPermissions.size : 0;
+
+    if (displayNameEl) displayNameEl.textContent = displayName;
+    if (usernameEl) usernameEl.textContent = getAuthUsername();
+    if (scopeEl) scopeEl.textContent = getScopeLabel(authScope);
+    if (rolesEl) rolesEl.textContent = authT('header.rolesCount', '{{count}} 个角色', { count: roleCount });
+    if (permissionsEl) permissionsEl.textContent = authT('header.permissionsCount', '{{count}} 项权限', { count: permissionCount });
+    if (avatarBtn && authUser) {
+        avatarBtn.setAttribute('title', displayName);
+        avatarBtn.setAttribute('aria-label', authT('header.userMenuFor', '用户菜单：{{name}}', { name: displayName }));
+    } else if (avatarBtn) {
+        avatarBtn.setAttribute('aria-label', authT('header.userMenu', '用户菜单'));
+    }
+}
+
+function setUserMenuOpen(open) {
+    const dropdown = document.getElementById('user-menu-dropdown');
+    const avatarBtn = document.getElementById('user-avatar-btn') || document.querySelector('.user-avatar-btn');
+    if (!dropdown) return;
+    dropdown.style.display = open ? 'block' : 'none';
+    if (avatarBtn) {
+        avatarBtn.classList.toggle('active', open);
+        avatarBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    if (open) {
+        renderUserMenuProfile();
+    }
 }
 
 // 通用工具函数
@@ -366,7 +552,15 @@ async function initializeApp() {
                 method: 'GET',
             });
             if (response.ok) {
+                const result = await response.json().catch(() => ({}));
+                saveAuth(result.token || authToken, result.expires_at || authTokenExpiry, {
+                    user: result.user || authUser,
+                    roles: result.roles || authRoles,
+                    permissions: result.permissions || Array.from(authPermissions),
+                    scope: result.scope || authScope,
+                });
                 hideLoginOverlay();
+                applyRBACToUI();
                 resolveAuthPromises(true);
                 await bootstrapApp();
                 return;
@@ -386,7 +580,7 @@ function toggleUserMenu() {
     if (!dropdown) return;
     
     const isVisible = dropdown.style.display !== 'none';
-    dropdown.style.display = isVisible ? 'none' : 'block';
+    setUserMenuOpen(!isVisible);
 }
 
 // 点击页面其他地方时关闭下拉菜单
@@ -397,17 +591,18 @@ document.addEventListener('click', function(event) {
     if (dropdown && avatarBtn && 
         !dropdown.contains(event.target) && 
         !avatarBtn.contains(event.target)) {
-        dropdown.style.display = 'none';
+        setUserMenuOpen(false);
     }
+});
+
+document.addEventListener('languagechange', function () {
+    renderUserMenuProfile();
 });
 
 // 退出登录
 async function logout() {
     // 关闭下拉菜单
-    const dropdown = document.getElementById('user-menu-dropdown');
-    if (dropdown) {
-        dropdown.style.display = 'none';
-    }
+    setUserMenuOpen(false);
     
     try {
         // 先尝试调用退出API（如果token有效）
@@ -434,5 +629,7 @@ async function logout() {
 // 导出函数供HTML使用
 window.toggleUserMenu = toggleUserMenu;
 window.logout = logout;
+window.hasPermission = hasPermission;
+window.applyRBACToUI = applyRBACToUI;
 
 document.addEventListener('DOMContentLoaded', initializeApp);

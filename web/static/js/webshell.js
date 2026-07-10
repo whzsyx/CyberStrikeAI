@@ -1048,6 +1048,7 @@ function probeWebshellConnection(conn) {
             cmd_param: conn.cmdParam || '',
             encoding: webshellConnEncoding(conn),
             os: webshellConnOS(conn),
+            connection_id: conn.id || '',
             command: buildWebshellProbeCommand(probeToken)
         })
     })
@@ -3854,6 +3855,7 @@ function execWebshellCommand(conn, command) {
                 cmd_param: conn.cmdParam || '',
                 encoding: webshellConnEncoding(conn),
                 os: webshellConnOS(conn),
+                connection_id: conn.id || '',
                 command: command
             })
         }).then(function (r) { return r.json(); })
