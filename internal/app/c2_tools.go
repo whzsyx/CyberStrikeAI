@@ -31,7 +31,7 @@ func registerC2Tools(mcpServer *mcp.Server, c2Manager *c2.Manager, logger *zap.L
 	registerC2EventTool(mcpServer, c2Manager, logger)
 	registerC2ProfileTool(mcpServer, c2Manager, logger)
 	registerC2FileTool(mcpServer, c2Manager, logger)
-	logger.Info("C2 MCP tools registered (8 unified tools)")
+	logger.Debug("C2 MCP tools registered (8 unified tools)")
 }
 
 func makeC2Result(data interface{}, err error) (*mcp.ToolResult, error) {

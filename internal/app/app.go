@@ -101,13 +101,12 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 		return nil, fmt.Errorf("初始化数据库失败: %w", err)
 	}
 
-	// 认证管理器（数据库初始化后挂载 RBAC，以兼容旧的单密码配置）
-	authManager, err := security.NewAuthManager(cfg.Auth.Password, cfg.Auth.SessionDurationHours)
-	if err != nil {
-		return nil, fmt.Errorf("初始化认证失败: %w", err)
-	}
-	if err := authManager.AttachRBACStore(db); err != nil {
+	// 认证管理器（数据库初始化后挂载 RBAC）
+	authManager := security.NewAuthManager(cfg.Auth.SessionDurationHours)
+	if generatedPassword, err := authManager.AttachRBACStore(db); err != nil {
 		return nil, fmt.Errorf("初始化RBAC失败: %w", err)
+	} else if generatedPassword != "" {
+		config.PrintBootstrapAdminPassword(generatedPassword)
 	}
 	for platform, userID := range cfg.Robots.ServiceAccountUserIDs() {
 		user, userErr := db.GetRBACUserByID(userID)
@@ -125,6 +124,9 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	monitorRetention.PurgeExpired()
 	monitor.StartRetentionLoop(monitorRetention, log.Logger)
 
+	if err := handler.NewHITLManager(db, log.Logger).EnsureSchema(); err != nil {
+		log.Logger.Warn("初始化 HITL 表失败", zap.Error(err))
+	}
 	hitlRetention := hitl.NewService(db, cfg, log.Logger)
 	hitlRetention.PurgeExpired()
 	hitl.StartRetentionLoop(hitlRetention, log.Logger)
@@ -145,13 +147,6 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	registerVulnerabilityTools(mcpServer, db, log.Logger)
 	registerProjectFactTools(mcpServer, db, cfg, log.Logger)
 	registerVisionTools(mcpServer, cfg, log.Logger)
-
-	if cfg.Auth.GeneratedPassword != "" {
-		config.PrintGeneratedPasswordWarning(cfg.Auth.GeneratedPassword, cfg.Auth.GeneratedPasswordPersisted, cfg.Auth.GeneratedPasswordPersistErr)
-		cfg.Auth.GeneratedPassword = ""
-		cfg.Auth.GeneratedPasswordPersisted = false
-		cfg.Auth.GeneratedPasswordPersistErr = ""
-	}
 
 	// 创建外部MCP管理器（使用与内部MCP服务器相同的存储）
 	externalMCPMgr := mcp.NewExternalMCPManagerWithStorage(log.Logger, db)
@@ -181,7 +176,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	var knowledgeHandler *handler.KnowledgeHandler
 
 	var knowledgeDBConn *database.DB
-	log.Logger.Info("检查知识库配置", zap.Bool("enabled", cfg.Knowledge.Enabled))
+	log.Logger.Debug("检查知识库配置", zap.Bool("enabled", cfg.Knowledge.Enabled))
 	if cfg.Knowledge.Enabled {
 		// 确定知识库数据库路径
 		knowledgeDBPath := cfg.Database.KnowledgeDBPath
@@ -324,7 +319,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	}
 
 	skillsDir := skillpackage.SkillsRootFromConfig(cfg.SkillsDir, configPath)
-	log.Logger.Info("Skills 目录（Eino ADK skill 中间件 + Web 管理 API）", zap.String("skillsDir", skillsDir))
+	log.Logger.Debug("Skills 目录（Eino ADK skill 中间件 + Web 管理 API）", zap.String("skillsDir", skillsDir))
 	configDir := filepath.Dir(configPath)
 	plantaskRel := strings.TrimSpace(cfg.MultiAgent.EinoMiddleware.PlantaskRelDir)
 	if plantaskRel == "" {
@@ -350,7 +345,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	}
 	markdownAgentsHandler := handler.NewMarkdownAgentsHandler(agentsDir)
 	markdownAgentsHandler.SetAudit(auditSvc)
-	log.Logger.Info("多代理 Markdown 子 Agent 目录", zap.String("agentsDir", agentsDir))
+	log.Logger.Debug("多代理 Markdown 子 Agent 目录", zap.String("agentsDir", agentsDir))
 
 	// 创建处理器
 	agentHandler := handler.NewAgentHandler(agent, db, cfg, log.Logger)
@@ -635,20 +630,20 @@ func (a *App) RunWithContext(ctx context.Context) error {
 		}
 		switch tlsMode {
 		case mainTLSFromFiles:
-			a.logger.Info("启动 HTTPS 主服务（已启用 HTTP/2 协商）",
+			a.logger.Debug("启动 HTTPS 主服务（已启用 HTTP/2 协商）",
 				zap.String("address", addr),
 				zap.String("cert", certFile),
 			)
 		case mainTLSInMemorySelfSigned:
-			a.logger.Info("启动 HTTPS 主服务（内存自签证书，仅测试；已启用 HTTP/2 协商）",
+			a.logger.Debug("启动 HTTPS 主服务（内存自签证书，仅测试；已启用 HTTP/2 协商）",
 				zap.String("address", addr),
 			)
 		}
 		if httpRedirect {
-			a.logger.Info("已启用 HTTP→HTTPS 自动跳转（同端口嗅探分流）", zap.String("address", addr))
+			a.logger.Debug("已启用 HTTP→HTTPS 自动跳转（同端口嗅探分流）", zap.String("address", addr))
 		}
 	} else {
-		a.logger.Info("启动 HTTP 主服务", zap.String("address", addr))
+		a.logger.Debug("启动 HTTP 主服务", zap.String("address", addr))
 	}
 
 	// 监听 context 取消，优雅关闭 HTTP 服务器
@@ -1508,7 +1503,7 @@ func registerWebshellTools(mcpServer *mcp.Server, db *database.DB, webshellHandl
 	}
 	mcpServer.RegisterTool(writeTool, writeHandler)
 
-	logger.Info("WebShell 工具注册成功")
+	logger.Debug("WebShell 工具注册成功")
 }
 
 // registerWebshellManagementTools 注册 WebShell 连接管理 MCP 工具
@@ -1879,7 +1874,7 @@ func registerWebshellManagementTools(mcpServer *mcp.Server, db *database.DB, web
 	}
 	mcpServer.RegisterTool(testTool, testHandler)
 
-	logger.Info("WebShell 管理工具注册成功")
+	logger.Debug("WebShell 管理工具注册成功")
 }
 
 // initializeKnowledge 初始化知识库组件（用于动态初始化）
