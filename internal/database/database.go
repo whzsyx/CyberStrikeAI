@@ -113,10 +113,10 @@ func (db *DB) runPassiveCheckpoint(trigger string) {
 		return
 	}
 	if busy > 0 {
-		db.logger.Info("SQLite PASSIVE checkpoint 完成（部分推进）", fields...)
+		db.logger.Debug("SQLite PASSIVE checkpoint 完成（部分推进）", fields...)
 		return
 	}
-	db.logger.Info("SQLite PASSIVE checkpoint 完成（成功）", fields...)
+	db.logger.Debug("SQLite PASSIVE checkpoint 完成（成功）", fields...)
 }
 
 // NewDB 创建数据库连接
@@ -869,7 +869,7 @@ func (db *DB) initTables() error {
 		return fmt.Errorf("创建索引失败: %w", err)
 	}
 
-	db.logger.Info("数据库表初始化完成")
+	db.logger.Debug("数据库表初始化完成")
 	return nil
 }
 

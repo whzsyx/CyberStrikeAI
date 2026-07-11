@@ -227,11 +227,32 @@ func (db *DB) addColumnIfMissing(table, name, stmt string) error {
 	return nil
 }
 
+// RBACNeedsAdminPassword reports whether the built-in admin account still needs an initial password.
+func (db *DB) RBACNeedsAdminPassword() (bool, error) {
+	var userCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM rbac_users`).Scan(&userCount); err != nil {
+		return false, err
+	}
+	if userCount == 0 {
+		return true, nil
+	}
+	var hash sql.NullString
+	err := db.QueryRow(`
+		SELECT password_hash FROM rbac_users
+		WHERE username = 'admin' AND is_builtin = 1
+		LIMIT 1
+	`).Scan(&hash)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return !hash.Valid || strings.TrimSpace(hash.String) == "", nil
+}
+
 // BootstrapRBAC seeds the local admin account and system roles.
 func (db *DB) BootstrapRBAC(adminPasswordHash string, permissions map[string]string) error {
-	if strings.TrimSpace(adminPasswordHash) == "" {
-		return errors.New("admin password hash is required")
-	}
 	now := time.Now()
 	tx, err := db.Begin()
 	if err != nil {
@@ -302,6 +323,9 @@ func (db *DB) BootstrapRBAC(adminPasswordHash string, permissions map[string]str
 		return err
 	}
 	if userCount == 0 {
+		if strings.TrimSpace(adminPasswordHash) == "" {
+			return errors.New("admin password hash is required for initial bootstrap")
+		}
 		if _, err := tx.Exec(`
 			INSERT INTO rbac_users (id, username, display_name, password_hash, enabled, is_builtin, created_at, updated_at)
 			VALUES (?, 'admin', '管理员', ?, 1, 1, ?, ?)
@@ -311,7 +335,7 @@ func (db *DB) BootstrapRBAC(adminPasswordHash string, permissions map[string]str
 		if _, err := tx.Exec(`INSERT OR IGNORE INTO rbac_user_roles (user_id, role_id, created_at) VALUES ('admin', ?, ?)`, RBACSystemRoleAdmin, now); err != nil {
 			return err
 		}
-	} else {
+	} else if strings.TrimSpace(adminPasswordHash) != "" {
 		if _, err := tx.Exec(`UPDATE rbac_users SET password_hash = ?, updated_at = ? WHERE username = 'admin' AND is_builtin = 1 AND (password_hash = '' OR password_hash IS NULL)`, adminPasswordHash, now); err != nil {
 			return err
 		}

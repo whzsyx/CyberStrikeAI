@@ -661,7 +661,7 @@ func (a *Agent) UpdateToolDescriptionMode(mode string) {
 		mode = "short"
 	}
 	a.toolDescriptionMode = mode
-	a.logger.Info("Agent工具描述模式已更新", zap.String("tool_description_mode", mode))
+	a.logger.Debug("Agent工具描述模式已更新", zap.String("tool_description_mode", mode))
 }
 
 // RepairOrphanToolMessages 清理失去配对的tool消息和未完成的tool_calls，避免OpenAI报错
