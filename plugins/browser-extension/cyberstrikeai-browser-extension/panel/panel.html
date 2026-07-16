@@ -117,9 +117,45 @@
         <h3>Send to CyberStrikeAI</h3>
       </div>
       <div class="send-row">
-        <label class="field block">Project <select id="dlg-project"></select></label>
-        <label class="field block">Role <select id="dlg-role"></select></label>
-        <label class="field block">Agent <select id="dlg-agent"></select></label>
+        <div class="field block">
+          <span class="field-label">Project</span>
+          <div class="cs-select" data-cs-select="dlg-project">
+            <input type="hidden" id="dlg-project" value="">
+            <button type="button" class="cs-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+              <span class="cs-select-value">Loading…</span>
+              <svg class="cs-select-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <ul class="cs-select-menu" role="listbox" hidden></ul>
+          </div>
+        </div>
+        <div class="field block">
+          <span class="field-label">Role</span>
+          <div class="cs-select" data-cs-select="dlg-role">
+            <input type="hidden" id="dlg-role" value="">
+            <button type="button" class="cs-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+              <span class="cs-select-value">Loading…</span>
+              <svg class="cs-select-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <ul class="cs-select-menu" role="listbox" hidden></ul>
+          </div>
+        </div>
+        <div class="field block">
+          <span class="field-label">Agent</span>
+          <div class="cs-select" data-cs-select="dlg-agent">
+            <input type="hidden" id="dlg-agent" value="">
+            <button type="button" class="cs-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+              <span class="cs-select-value">Eino Single (ADK)</span>
+              <svg class="cs-select-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <ul class="cs-select-menu" role="listbox" hidden></ul>
+          </div>
+        </div>
       </div>
       <label class="field block">Test instruction (editable for this request)
         <textarea id="dlg-instruction" rows="6"></textarea>

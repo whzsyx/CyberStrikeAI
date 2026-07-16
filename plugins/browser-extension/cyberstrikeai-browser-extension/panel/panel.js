@@ -757,26 +757,111 @@ async function onValidate() {
 }
 
 function fillAgentSelect(sel, selected) {
-  sel.innerHTML = '';
-  for (const m of AGENT_MODES) {
-    const opt = document.createElement('option');
-    opt.value = m.id;
-    opt.textContent = m.label;
-    sel.appendChild(opt);
-  }
-  sel.value = selected || 'eino_single';
+  fillSelect(sel, AGENT_MODES.map((m) => ({ id: m.id, label: m.label })), selected || 'eino_single');
+}
+
+function csSelectWrap(input) {
+  return input && input.closest ? input.closest('.cs-select') : null;
+}
+
+function closeAllCsSelects(except) {
+  document.querySelectorAll('.cs-select.open').forEach((wrap) => {
+    if (except && wrap === except) return;
+    wrap.classList.remove('open');
+    const trigger = wrap.querySelector('.cs-select-trigger');
+    const menu = wrap.querySelector('.cs-select-menu');
+    if (trigger) trigger.setAttribute('aria-expanded', 'false');
+    if (menu) menu.hidden = true;
+  });
 }
 
 function fillSelect(sel, items, value) {
-  sel.innerHTML = '';
-  for (const item of items) {
-    const opt = document.createElement('option');
-    opt.value = item.id;
-    opt.textContent = item.label;
-    sel.appendChild(opt);
-  }
+  const wrap = csSelectWrap(sel);
   const has = items.some((i) => i.id === value);
-  sel.value = has ? value : (items[0] && items[0].id) || '';
+  const resolved = has ? value : (items[0] && items[0].id) || '';
+  const selectedItem = items.find((i) => i.id === resolved) || items[0];
+
+  sel.value = resolved;
+
+  if (!wrap) {
+    // Fallback for plain <select> if any remain
+    sel.innerHTML = '';
+    for (const item of items) {
+      const opt = document.createElement('option');
+      opt.value = item.id;
+      opt.textContent = item.label;
+      sel.appendChild(opt);
+    }
+    sel.value = resolved;
+    return;
+  }
+
+  const valueEl = wrap.querySelector('.cs-select-value');
+  const menu = wrap.querySelector('.cs-select-menu');
+  if (valueEl) valueEl.textContent = (selectedItem && selectedItem.label) || '—';
+  if (!menu) return;
+
+  menu.innerHTML = '';
+  for (const item of items) {
+    const li = document.createElement('li');
+    li.setAttribute('role', 'option');
+    li.className = 'cs-select-option' + (item.id === resolved ? ' is-selected' : '');
+    li.setAttribute('data-value', item.id);
+    li.setAttribute('aria-selected', item.id === resolved ? 'true' : 'false');
+    li.innerHTML =
+      '<span class="cs-select-option-check" aria-hidden="true">✓</span>' +
+      '<span class="cs-select-option-label"></span>';
+    li.querySelector('.cs-select-option-label').textContent = item.label;
+    li.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      sel.value = item.id;
+      if (valueEl) valueEl.textContent = item.label;
+      menu.querySelectorAll('.cs-select-option').forEach((opt) => {
+        const on = (opt.getAttribute('data-value') || '') === item.id;
+        opt.classList.toggle('is-selected', on);
+        opt.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      closeAllCsSelects();
+    });
+    menu.appendChild(li);
+  }
+}
+
+function setupCsSelects() {
+  document.querySelectorAll('.cs-select').forEach((wrap) => {
+    const trigger = wrap.querySelector('.cs-select-trigger');
+    const menu = wrap.querySelector('.cs-select-menu');
+    if (!trigger || !menu || trigger.dataset.csBound) return;
+    trigger.dataset.csBound = '1';
+    trigger.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const willOpen = !wrap.classList.contains('open');
+      closeAllCsSelects();
+      if (willOpen) {
+        wrap.classList.add('open');
+        trigger.setAttribute('aria-expanded', 'true');
+        menu.hidden = false;
+        const selected = menu.querySelector('.cs-select-option.is-selected');
+        if (selected) selected.scrollIntoView({ block: 'nearest' });
+      }
+    });
+  });
+
+  document.addEventListener('click', (ev) => {
+    if (ev.target.closest && ev.target.closest('.cs-select')) return;
+    closeAllCsSelects();
+  });
+
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') closeAllCsSelects();
+  });
+
+  const dlg = $('send-dialog');
+  if (dlg) {
+    dlg.addEventListener('close', () => closeAllCsSelects());
+  }
 }
 
 async function openSendDialog(entryOverride) {
@@ -789,14 +874,15 @@ async function openSendDialog(entryOverride) {
 
   $('dlg-instruction').value = config.lastInstruction || defaultInstruction();
   fillAgentSelect($('dlg-agent'), config.lastAgentMode);
-  $('dlg-project').innerHTML = '<option>Loading…</option>';
-  $('dlg-role').innerHTML = '<option>Loading…</option>';
+  fillSelect($('dlg-project'), [{ id: '', label: 'Loading…' }], '');
+  fillSelect($('dlg-role'), [{ id: '', label: 'Loading…' }], '');
   dlg.showModal();
 
   try {
     const { projects, roles } = await fetchCatalogCached(baseUrl, token);
     fillSelect($('dlg-project'), projects, config.lastProjectId);
-    fillSelect($('dlg-role'), roles, config.lastRole);
+    const lastRole = config.lastRole === '默认' ? '' : config.lastRole;
+    fillSelect($('dlg-role'), roles, lastRole);
   } catch (err) {
     if (await handleAuthFailure(err, 'Token invalid or expired — please Validate again')) {
       dlg.close();
@@ -832,7 +918,8 @@ async function onSendConfirmed() {
   }
 
   const modeLabel = (AGENT_MODES.find((m) => m.id === agentMode) || {}).label || agentMode;
-  const roleLabel = role || 'Default';
+  const roleValueEl = document.querySelector('[data-cs-select="dlg-role"] .cs-select-value');
+  const roleLabel = (roleValueEl && roleValueEl.textContent) || role || 'Default';
   const run = createRun(e, modeLabel + ' · ' + roleLabel);
   activeRunId = run.id;
   prependRunItem(run);
@@ -1149,6 +1236,7 @@ $('send-form').addEventListener('submit', (ev) => {
 $('dlg-cancel').addEventListener('click', () => $('send-dialog').close());
 
 setupTabs();
+setupCsSelects();
 setupAuthProbeHooks();
 initConfig().then(() => {
   if (extensionAlive()) connectBackground();

@@ -816,6 +816,7 @@ body {
   background: var(--csai-surface);
   color: var(--csai-text);
   box-shadow: var(--csai-shadow-md);
+  overflow: visible;
 }
 
 #send-dialog::backdrop {
@@ -823,7 +824,11 @@ body {
   backdrop-filter: blur(2px);
 }
 
-#send-dialog form { padding: 20px; margin: 0; }
+#send-dialog form {
+  padding: 20px;
+  margin: 0;
+  overflow: visible;
+}
 
 .dialog-header {
   display: flex;
@@ -849,6 +854,143 @@ body {
   grid-template-columns: 1fr 1fr 1fr;
   gap: 12px;
   margin-bottom: 14px;
+  position: relative;
+  z-index: 2;
+}
+
+#send-dialog .field-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--csai-text-muted);
+  margin-bottom: 4px;
+}
+
+/* ── Custom select (Send dialog) ── */
+.cs-select {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.cs-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  height: 36px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--csai-border);
+  border-radius: var(--csai-radius-sm);
+  background: var(--csai-surface-2);
+  color: var(--csai-text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.cs-select-trigger:hover {
+  border-color: var(--csai-border-strong);
+  background: var(--csai-surface);
+}
+
+.cs-select.open .cs-select-trigger {
+  border-color: var(--csai-accent);
+  box-shadow: 0 0 0 3px var(--csai-accent-ring);
+  background: var(--csai-surface);
+}
+
+.cs-select-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.cs-select-caret {
+  flex-shrink: 0;
+  color: var(--csai-text-faint);
+  transition: transform 0.15s ease;
+}
+
+.cs-select.open .cs-select-caret {
+  transform: rotate(180deg);
+  color: var(--csai-accent);
+}
+
+.cs-select-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 240px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--csai-surface);
+  border: 1px solid var(--csai-border);
+  border-radius: var(--csai-radius);
+  box-shadow: var(--csai-shadow-md);
+}
+
+.cs-select-menu[hidden] {
+  display: none !important;
+}
+
+.cs-select-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--csai-radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--csai-text);
+  cursor: pointer;
+  line-height: 1.35;
+  transition: background 0.1s, color 0.1s;
+}
+
+.cs-select-option:hover {
+  background: var(--csai-surface-2);
+}
+
+.cs-select-option.is-selected {
+  background: var(--csai-accent-soft);
+  color: var(--csai-accent);
+  font-weight: 600;
+}
+
+.cs-select-option-check {
+  flex: 0 0 12px;
+  width: 12px;
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0;
+  color: var(--csai-accent);
+}
+
+.cs-select-option.is-selected .cs-select-option-check {
+  opacity: 1;
+}
+
+.cs-select-option-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #dlg-instruction {
