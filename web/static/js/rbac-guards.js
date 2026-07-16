@@ -113,6 +113,10 @@
         scanFofaRow: 'fofa:execute',
         batchScanSelectedFofaRows: 'fofa:execute',
         exportFofaResults: 'fofa:execute',
+        importSelectedFofaAssets: 'asset:write',
+        importFofaRowAsset: 'asset:write',
+        saveAsset: 'asset:write',
+        deleteAsset: 'asset:delete',
 
         // 任务队列
         showBatchImportModal: 'tasks:write',

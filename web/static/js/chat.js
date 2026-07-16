@@ -3079,6 +3079,29 @@ function getCachedToolExecutionSummaries(messageElement) {
     }
 }
 
+/**
+ * 过程摘要中的早期/快速工具结果可能没有 executionId，但消息本身会按调用顺序保存 ID。
+ * 合并两份数据，避免渲染摘要时丢失可用的弹窗详情入口。
+ */
+function mergeToolExecutionSummariesWithIds(summaries, executionIds) {
+    const normalizedSummaries = Array.isArray(summaries)
+        ? summaries.map(normalizeToolExecutionSummaryForButton)
+        : [];
+    const normalizedIds = normalizeMcpExecutionIds(executionIds);
+    const claimedIds = new Set(
+        normalizedSummaries.map((item) => item.executionId).filter(Boolean)
+    );
+    const fallbackIds = normalizedIds.filter((id) => !claimedIds.has(id));
+    let fallbackIndex = 0;
+    return normalizedSummaries.map((item) => {
+        if (item.executionId || fallbackIndex >= fallbackIds.length) return item;
+        return {
+            ...item,
+            executionId: fallbackIds[fallbackIndex++]
+        };
+    });
+}
+
 function setPendingToolExecutionSummaries(messageElement, summaries) {
     if (!messageElement || !messageElement.dataset || !Array.isArray(summaries)) return;
     const normalized = cacheToolExecutionSummaries(messageElement, summaries);
@@ -3337,9 +3360,28 @@ window.setMcpExecutionSummaryCount = setMcpExecutionSummaryCount;
 window.setPendingMcpExecutionIds = setPendingMcpExecutionIds;
 window.setPendingToolExecutionSummaries = setPendingToolExecutionSummaries;
 
+async function openTaskToolExecutionDetail(messageElement, item, index) {
+    let detailItem = item;
+    if (!detailItem.executionId) {
+        const refreshedItem = await resolveToolExecutionSummaryForFocus(messageElement, '', index);
+        const mergedItems = mergeToolExecutionSummariesWithIds(
+            getCachedToolExecutionSummaries(messageElement),
+            getCachedMcpExecutionIds(messageElement)
+        );
+        detailItem = mergedItems[index] || refreshedItem || detailItem;
+    }
+    if (detailItem.executionId) {
+        await showMCPDetail(detailItem.executionId);
+        return;
+    }
+    alert(typeof window.t === 'function'
+        ? window.t('chat.toolExecutionDetailPending')
+        : '工具执行详情尚未同步，请稍后重试。');
+}
+
 /**
  * 声明式渲染工具调用列表。
- * 过程摘要是展示与定位的唯一模型；executionIds 仅在摘要尚未到达时提供占位。
+ * 过程摘要是展示详情入口的唯一模型；executionIds 仅在摘要尚未到达时提供占位。
  * 每次更新整体替换列表，避免增量追加产生双重状态。
  */
 function renderMcpCallButtons(messageElement) {
@@ -3350,7 +3392,7 @@ function renderMcpCallButtons(messageElement) {
     const executionIds = getCachedMcpExecutionIds(messageElement);
     const summaries = getCachedToolExecutionSummaries(messageElement);
     const items = summaries.length > 0
-        ? summaries
+        ? mergeToolExecutionSummariesWithIds(summaries, executionIds)
         : executionIds.map((executionId) => normalizeToolExecutionSummaryForButton({ executionId }));
 
     const renderVersion = String((parseInt(toolList.dataset.renderVersion, 10) || 0) + 1);
@@ -3367,17 +3409,7 @@ function renderMcpCallButtons(messageElement) {
         if (item.toolCallId) {
             btn.dataset.toolCallId = item.toolCallId;
         }
-        btn.onclick = async () => {
-            let focusItem = item;
-            if (!focusItem.processDetailId && !focusItem.toolCallId && focusItem.executionId) {
-                focusItem = await resolveToolExecutionSummaryForFocus(
-                    messageElement,
-                    focusItem.executionId,
-                    index
-                ) || focusItem;
-            }
-            await focusToolExecutionInProcessDetails(messageElement, focusItem, index);
-        };
+        btn.onclick = () => openTaskToolExecutionDetail(messageElement, item, index);
         if (item.toolName) {
             renderToolExecutionButtonContent(btn, item.toolName, String(index + 1), item.status);
         } else {

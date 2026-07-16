@@ -556,6 +556,9 @@ function renderFofaResults(payload) {
                         <path d="M16 8h3a4 4 0 0 1 0 8h-3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                     </svg>
                 </button>
+                <button class="btn-icon" data-require-permission="asset:write" onclick="importFofaRowAsset(${idx}); event.stopPropagation();" title="${escapeHtml(_t('assets.importOne'))}">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 19h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
             </div>
         `;
 
@@ -566,6 +569,7 @@ function renderFofaResults(payload) {
 
     // 更新全选框状态
     syncSelectAllCheckbox();
+    if (typeof applyRBACToUI === 'function') applyRBACToUI(els.tbody);
 }
 
 function inferTargetFromRow(row, fields) {
@@ -1147,4 +1151,3 @@ if (document.readyState === 'loading') {
 } else {
     updateSelectedMeta();
 }
-

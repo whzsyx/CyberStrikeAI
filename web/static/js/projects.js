@@ -7,6 +7,7 @@ const PROJECTS_LIST_PAGE_SIZE_KEY = 'cyberstrike.projects_list_page_size';
 let currentProjectId = null;
 let currentProjectUpdatedAt = null;
 let currentProjectTab = 'facts';
+let currentProjectAssets = [];
 const projectNameById = {};
 let _projectsListReady = false;
 let _projectsFetchPromise = null;
@@ -1016,8 +1017,9 @@ async function selectProject(id) {
 }
 
 function switchProjectTab(tab) {
+    if (tab === 'assets' && typeof hasPermission === 'function' && !hasPermission('asset:read')) tab = 'facts';
     currentProjectTab = tab;
-    ['facts', 'graph', 'conversations', 'vulns', 'settings'].forEach((t) => {
+    ['facts', 'graph', 'assets', 'conversations', 'vulns', 'settings'].forEach((t) => {
         const btn = document.getElementById(`project-tab-${t}`);
         const panel = document.getElementById(`project-panel-${t}`);
         if (btn) btn.classList.toggle('is-active', t === tab);
@@ -1025,8 +1027,52 @@ function switchProjectTab(tab) {
     });
     if (tab === 'facts') loadProjectFacts();
     if (tab === 'graph') loadProjectFactGraph();
+    if (tab === 'assets') loadProjectAssets();
     if (tab === 'conversations') loadProjectConversations();
     if (tab === 'vulns') loadProjectVulnerabilities();
+}
+
+async function loadProjectAssets() {
+    const tbody = document.getElementById('project-assets-tbody');
+    const countEl = document.getElementById('project-assets-count');
+    if (!tbody || !currentProjectId) return;
+    tbody.innerHTML = `<tr class="is-empty-row"><td colspan="7">${escapeHtml(tpFmt('common.loading', '加载中...'))}</td></tr>`;
+    const qs = new URLSearchParams({ project_id: currentProjectId, page: '1', page_size: '100' });
+    const res = await apiFetch(`/api/assets?${qs.toString()}`);
+    if (!res.ok) {
+        currentProjectAssets = [];
+        if (countEl) countEl.textContent = '0';
+        tbody.innerHTML = `<tr class="is-empty-row"><td colspan="7">${escapeHtml(tpFmt('common.loadFailed', '加载失败'))}</td></tr>`;
+        return;
+    }
+    const data = await res.json();
+    currentProjectAssets = data.assets || [];
+    if (countEl) countEl.textContent = tpFmt('projects.assetCount', `${data.total || 0} 个资产`, { count: data.total || 0 });
+    if (!currentProjectAssets.length) {
+        tbody.innerHTML = `<tr class="is-empty-row"><td colspan="7">${escapeHtml(tpFmt('projects.noBoundAssets', '暂无绑定到此项目的资产'))}</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = currentProjectAssets.map((asset, index) => {
+        const target = asset.host || asset.domain || asset.ip || '-';
+        const service = [asset.protocol, asset.port ? ':' + asset.port : ''].join('') || '-';
+        const fingerprint = [asset.title, asset.server].filter(Boolean).join(' · ') || '-';
+        const updated = asset.last_seen_at ? new Date(asset.last_seen_at).toLocaleString() : '-';
+        const status = asset.status === 'inactive' ? tpFmt('assets.statusInactive', '停用') : tpFmt('assets.statusActive', '活跃');
+        return `<tr>
+            <td class="cell-summary"><button type="button" class="projects-asset-target" onclick="openProjectAssetDetail(${index})" title="${escapeHtml(target)}">${escapeHtml(target)}</button></td>
+            <td><code>${escapeHtml(service)}</code></td>
+            <td class="cell-summary" title="${escapeHtml(fingerprint)}">${escapeHtml(fingerprint)}</td>
+            <td>${escapeHtml(asset.source || '-')}</td>
+            <td>${escapeHtml(updated)}</td>
+            <td><span class="asset-status asset-status--${escapeHtml(asset.status || 'active')}">${escapeHtml(status)}</span></td>
+            <td class="col-actions"><div class="projects-table-actions"><button type="button" class="projects-action-btn projects-action-btn--view" onclick="openProjectAssetDetail(${index})">${escapeHtml(tpFmt('common.view', '查看'))}</button></div></td>
+        </tr>`;
+    }).join('');
+}
+
+function openProjectAssetDetail(index) {
+    const asset = currentProjectAssets[Number(index)];
+    if (asset && typeof window.openAssetDetailRecord === 'function') window.openAssetDetailRecord(asset);
 }
 
 let _selectedGraphFactKey = null;
@@ -2759,6 +2805,8 @@ window.viewFactsForVulnerability = viewFactsForVulnerability;
 window.openProjectConversation = openProjectConversation;
 window.unbindConversationFromProject = unbindConversationFromProject;
 window.loadProjectConversations = loadProjectConversations;
+window.loadProjectAssets = loadProjectAssets;
+window.openProjectAssetDetail = openProjectAssetDetail;
 window.loadProjectFactGraph = loadProjectFactGraph;
 window.filterProjectFactGraph = filterProjectFactGraph;
 window.centerProjectFactGraph = centerProjectFactGraph;
