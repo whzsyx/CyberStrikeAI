@@ -47,7 +47,23 @@ func TestAssetToolsCRUDQueryAndPageLimit(t *testing.T) {
 		}
 	}
 
-	result, _, err := server.CallTool(ctx, builtin.ToolCreateAsset, map[string]interface{}{
+	for _, tool := range server.GetAllTools() {
+		if tool.Name != builtin.ToolCreateAsset {
+			continue
+		}
+		for _, keyword := range []string{"oneOf", "allOf", "anyOf"} {
+			if _, exists := tool.InputSchema[keyword]; exists {
+				t.Fatalf("create asset schema contains Bedrock-incompatible top-level %s", keyword)
+			}
+		}
+	}
+
+	result, _, err := server.CallTool(ctx, builtin.ToolCreateAsset, map[string]interface{}{"title": "Missing target"})
+	if err != nil || result == nil || !result.IsError {
+		t.Fatalf("create asset accepted missing host/ip/domain: result=%#v err=%v", result, err)
+	}
+
+	result, _, err = server.CallTool(ctx, builtin.ToolCreateAsset, map[string]interface{}{
 		"ip": "192.0.2.42", "port": 443, "protocol": "https", "title": "Before", "tags": []interface{}{"prod"},
 	})
 	if err != nil || result == nil || result.IsError {
