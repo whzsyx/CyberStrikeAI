@@ -846,7 +846,8 @@ func (c OpenAIConfig) MaxCompletionTokensEffective() int {
 
 // OpenAIReasoningConfig 全局默认与网关 profile（对话页可通过 ChatRequest.reasoning 覆盖，受 AllowClientReasoning 约束）。
 type OpenAIReasoningConfig struct {
-	// Mode: auto（默认）| on | off | default（与 auto 相同）。off 时不向模型附加推理扩展字段。
+	// Mode: auto（默认）| on | off | default（与 auto 相同）。
+	// off 在 OpenAI/Claude profile 下省略推理字段；DeepSeek profile 下发送 thinking.type=disabled（其默认开启思考）。
 	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
 	// Effort: low | medium | high | max | xhigh；max/xhigh 为不同网关最高档命名，原样下发、不互转。空表示不单独指定强度。
 	Effort string `yaml:"effort,omitempty" json:"effort,omitempty"`
@@ -855,6 +856,7 @@ type OpenAIReasoningConfig struct {
 	// Profile: auto | deepseek_compat | openai_compat | output_config_effort
 	Profile string `yaml:"profile,omitempty" json:"profile,omitempty"`
 	// ExtraRequestFields 合并进 Chat Completions 根 JSON（管理员用；与自动字段同名时后者覆盖）。
+	// Mode=off 时会移除其中的推理控制字段，但保留其他扩展字段；DeepSeek profile 随后补充显式关闭开关。
 	ExtraRequestFields map[string]interface{} `yaml:"extra_request_fields,omitempty" json:"extra_request_fields,omitempty"`
 }
 
