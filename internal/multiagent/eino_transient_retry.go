@@ -94,6 +94,84 @@ func isRetryableHTTPStatus(status int) bool {
 	}
 }
 
+func einoTransientRunErrorUserDetail(err error) (kind, summary string) {
+	if err == nil {
+		return "", ""
+	}
+	msg := strings.TrimSpace(err.Error())
+	lower := strings.ToLower(msg)
+	if status := httpStatusFromErrorText(lower); status > 0 {
+		switch {
+		case status == 429:
+			kind = "rate_limit"
+		case status == 408 || status == 409 || status == 425:
+			kind = "retryable_http"
+		case status >= 500 && status <= 599:
+			kind = "upstream_server"
+		default:
+			kind = "http_error"
+		}
+	} else {
+		var apiErr *einoopenai.APIError
+		if errors.As(err, &apiErr) && apiErr.HTTPStatusCode > 0 {
+			switch {
+			case apiErr.HTTPStatusCode == 429:
+				kind = "rate_limit"
+			case apiErr.HTTPStatusCode == 408 || apiErr.HTTPStatusCode == 409 || apiErr.HTTPStatusCode == 425:
+				kind = "retryable_http"
+			case apiErr.HTTPStatusCode >= 500 && apiErr.HTTPStatusCode <= 599:
+				kind = "upstream_server"
+			default:
+				kind = "http_error"
+			}
+		}
+	}
+	if kind == "" {
+		switch {
+		case strings.Contains(lower, "too many requests") ||
+			strings.Contains(lower, "rate limit") ||
+			strings.Contains(lower, "rate_limit") ||
+			strings.Contains(lower, "ratelimit"):
+			kind = "rate_limit"
+		case strings.Contains(lower, "overloaded") ||
+			strings.Contains(lower, "capacity") ||
+			strings.Contains(lower, "temporarily unavailable") ||
+			strings.Contains(lower, "service unavailable"):
+			kind = "upstream_busy"
+		case strings.Contains(lower, "connection reset") ||
+			strings.Contains(lower, "connection refused") ||
+			strings.Contains(lower, "connection closed") ||
+			strings.Contains(lower, "i/o timeout") ||
+			strings.Contains(lower, "no such host") ||
+			strings.Contains(lower, "network is unreachable") ||
+			strings.Contains(lower, "broken pipe") ||
+			strings.Contains(lower, "read tcp") ||
+			strings.Contains(lower, "write tcp") ||
+			strings.Contains(lower, "dial tcp") ||
+			strings.Contains(lower, "tls handshake timeout") ||
+			strings.Contains(lower, "goaway") ||
+			strings.Contains(lower, "unexpected eof"):
+			kind = "network"
+		case strings.Contains(lower, "stream error") ||
+			strings.Contains(lower, "unexpected end of json"):
+			kind = "stream"
+		default:
+			kind = "transient"
+		}
+	}
+	return kind, einoTrimRetryErrorSummary(msg)
+}
+
+func einoTrimRetryErrorSummary(msg string) string {
+	msg = strings.Join(strings.Fields(strings.TrimSpace(msg)), " ")
+	const maxRunes = 500
+	runes := []rune(msg)
+	if len(runes) <= maxRunes {
+		return msg
+	}
+	return string(runes[:maxRunes]) + "..."
+}
+
 func httpStatusFromErrorText(msg string) int {
 	match := httpStatusInErrorPattern.FindStringSubmatch(msg)
 	if len(match) != 2 {

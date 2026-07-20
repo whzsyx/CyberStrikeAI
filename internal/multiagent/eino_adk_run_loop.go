@@ -588,11 +588,14 @@ func runEinoADKAgentLoop(ctx context.Context, args *einoADKRunLoopArgs, baseMsgs
 				zap.Duration("backoff", backoff))
 		}
 		if progress != nil {
-			progress("eino_run_retry", fmt.Sprintf("遇到临时错误（限流或网络波动），%d 秒后第 %d/%d 次重试…", int(backoff.Seconds()), attemptNo, maxAttempts), map[string]interface{}{
+			errorKind, errorSummary := einoTransientRunErrorUserDetail(runErr)
+			progress("eino_run_retry", fmt.Sprintf("遇到临时错误，%d 秒后第 %d/%d 次重试。原因：%s", int(backoff.Seconds()), attemptNo, maxAttempts, errorSummary), map[string]interface{}{
 				"conversationId": conversationID,
 				"source":         "eino",
 				"orchestration":  orchMode,
 				"error":          runErr.Error(),
+				"errorKind":      errorKind,
+				"errorSummary":   errorSummary,
 				"attempt":        attemptNo,
 				"maxAttempts":    maxAttempts,
 				"backoffSec":     int(backoff.Seconds()),
@@ -601,7 +604,12 @@ func runEinoADKAgentLoop(ctx context.Context, args *einoADKRunLoopArgs, baseMsgs
 				"conversationId": conversationID,
 				"source":         "eino",
 				"orchestration":  orchMode,
+				"error":          runErr.Error(),
+				"errorKind":      errorKind,
+				"errorSummary":   errorSummary,
 				"attempt":        attemptNo,
+				"maxAttempts":    maxAttempts,
+				"backoffSec":     int(backoff.Seconds()),
 				"contextSource":  string(ctxSource),
 			})
 		}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -59,6 +60,45 @@ func TestEinoTransientRetryBackoff(t *testing.T) {
 	}
 	if got := einoTransientRetryBackoff(4, max); got < 15*time.Second || got > 30*time.Second {
 		t.Fatalf("attempt 4 outside capped equal-jitter range [15s,30s]: %v", got)
+	}
+}
+
+func TestEinoTransientRunErrorUserDetail(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		err      error
+		wantKind string
+	}{
+		{"rate limit", errors.New("HTTP 429 Too Many Requests"), "rate_limit"},
+		{"upstream", errors.New("upstream returned 503"), "upstream_server"},
+		{"network", errors.New("read tcp: connection reset by peer"), "network"},
+		{"stream", errors.New("unexpected end of JSON"), "stream"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			kind, summary := einoTransientRunErrorUserDetail(tc.err)
+			if kind != tc.wantKind {
+				t.Fatalf("kind=%q, want %q", kind, tc.wantKind)
+			}
+			if summary == "" {
+				t.Fatal("summary should not be empty")
+			}
+		})
+	}
+}
+
+func TestEinoTrimRetryErrorSummary(t *testing.T) {
+	t.Parallel()
+	raw := strings.Repeat("报错 ", 260)
+	got := einoTrimRetryErrorSummary(raw)
+	if len([]rune(got)) > 503 {
+		t.Fatalf("summary too long: %d runes", len([]rune(got)))
+	}
+	if !strings.HasSuffix(got, "...") {
+		t.Fatal("trimmed summary should end with ellipsis")
 	}
 }
 
