@@ -725,9 +725,14 @@ type UpdateConfigRequest struct {
 // AgentConfigUpdate 用于 PATCH /api/config 的 agent 段：仅 JSON 中出现的字段（指针非 nil）覆盖内存配置。
 // 避免旧版「整包替换 *AgentConfig」时，未传的整型字段被反序列化为 0 误覆盖（例如 tool_timeout_minutes 变成 0）。
 type AgentConfigUpdate struct {
-	MaxIterations      *int    `json:"max_iterations,omitempty"`
-	ToolTimeoutMinutes *int    `json:"tool_timeout_minutes,omitempty"`
-	SystemPromptPath   *string `json:"system_prompt_path,omitempty"`
+	MaxIterations                      *int    `json:"max_iterations,omitempty"`
+	ToolTimeoutMinutes                 *int    `json:"tool_timeout_minutes,omitempty"`
+	ToolWaitTimeoutSeconds             *int    `json:"tool_wait_timeout_seconds,omitempty"`
+	ExternalMCPMaxConcurrentPerServer  *int    `json:"external_mcp_max_concurrent_per_server,omitempty"`
+	ExternalMCPMaxConcurrentTotal      *int    `json:"external_mcp_max_concurrent_total,omitempty"`
+	ExternalMCPCircuitFailureThreshold *int    `json:"external_mcp_circuit_failure_threshold,omitempty"`
+	ExternalMCPCircuitCooldownSeconds  *int    `json:"external_mcp_circuit_cooldown_seconds,omitempty"`
+	SystemPromptPath                   *string `json:"system_prompt_path,omitempty"`
 }
 
 func applyAgentConfigUpdate(dst *config.AgentConfig, src *AgentConfigUpdate) {
@@ -739,6 +744,21 @@ func applyAgentConfigUpdate(dst *config.AgentConfig, src *AgentConfigUpdate) {
 	}
 	if src.ToolTimeoutMinutes != nil {
 		dst.ToolTimeoutMinutes = *src.ToolTimeoutMinutes
+	}
+	if src.ToolWaitTimeoutSeconds != nil {
+		dst.ToolWaitTimeoutSeconds = *src.ToolWaitTimeoutSeconds
+	}
+	if src.ExternalMCPMaxConcurrentPerServer != nil {
+		dst.ExternalMCPMaxConcurrentPerServer = *src.ExternalMCPMaxConcurrentPerServer
+	}
+	if src.ExternalMCPMaxConcurrentTotal != nil {
+		dst.ExternalMCPMaxConcurrentTotal = *src.ExternalMCPMaxConcurrentTotal
+	}
+	if src.ExternalMCPCircuitFailureThreshold != nil {
+		dst.ExternalMCPCircuitFailureThreshold = *src.ExternalMCPCircuitFailureThreshold
+	}
+	if src.ExternalMCPCircuitCooldownSeconds != nil {
+		dst.ExternalMCPCircuitCooldownSeconds = *src.ExternalMCPCircuitCooldownSeconds
 	}
 	if src.SystemPromptPath != nil {
 		dst.SystemPromptPath = *src.SystemPromptPath
@@ -815,12 +835,32 @@ func (h *ConfigHandler) UpdateConfig(c *gin.Context) {
 		h.logger.Info("更新Agent配置",
 			zap.Int("max_iterations", h.config.Agent.MaxIterations),
 			zap.Int("tool_timeout_minutes", h.config.Agent.ToolTimeoutMinutes),
+			zap.Int("tool_wait_timeout_seconds", h.config.Agent.ToolWaitTimeoutSeconds),
+			zap.Int("external_mcp_max_concurrent_per_server", h.config.Agent.ExternalMCPMaxConcurrentPerServer),
+			zap.Int("external_mcp_max_concurrent_total", h.config.Agent.ExternalMCPMaxConcurrentTotal),
+			zap.Int("external_mcp_circuit_failure_threshold", h.config.Agent.ExternalMCPCircuitFailureThreshold),
+			zap.Int("external_mcp_circuit_cooldown_seconds", h.config.Agent.ExternalMCPCircuitCooldownSeconds),
 		)
 		if h.agent != nil && req.Agent.MaxIterations != nil {
 			h.agent.UpdateMaxIterations(h.config.Agent.MaxIterations)
 		}
+		if h.executor != nil {
+			h.executor.SetToolOutputMaxBytes(h.config.MultiAgent.EinoMiddleware.ReductionMaxLengthForTruncEffective())
+		}
 		if h.mcpServer != nil {
 			h.mcpServer.ConfigureHTTPToolCallTimeoutFromAgentMinutes(h.config.Agent.ToolTimeoutMinutes)
+			h.mcpServer.ConfigureToolWaitTimeoutSeconds(h.config.Agent.ToolWaitTimeoutSeconds)
+			h.mcpServer.ConfigureToolResultMaxBytes(h.config.MultiAgent.EinoMiddleware.ReductionMaxLengthForTruncEffective())
+		}
+		if h.externalMCPMgr != nil {
+			h.externalMCPMgr.ConfigureToolWaitTimeoutSeconds(h.config.Agent.ToolWaitTimeoutSeconds)
+			h.externalMCPMgr.ConfigureToolResultMaxBytes(h.config.MultiAgent.EinoMiddleware.ReductionMaxLengthForTruncEffective())
+			h.externalMCPMgr.ConfigureResilience(mcp.ExternalMCPResilienceConfig{
+				MaxConcurrentPerServer:  h.config.Agent.ExternalMCPMaxConcurrentPerServer,
+				MaxConcurrentTotal:      h.config.Agent.ExternalMCPMaxConcurrentTotal,
+				CircuitFailureThreshold: h.config.Agent.ExternalMCPCircuitFailureThreshold,
+				CircuitCooldown:         time.Duration(h.config.Agent.ExternalMCPCircuitCooldownSeconds) * time.Second,
+			})
 		}
 	}
 
@@ -1471,6 +1511,7 @@ func (h *ConfigHandler) ApplyConfig(c *gin.Context) {
 	h.mcpServer.ClearTools()
 
 	// 重新注册安全工具
+	h.executor.SetToolOutputMaxBytes(h.config.MultiAgent.EinoMiddleware.ReductionMaxLengthForTruncEffective())
 	h.executor.RegisterTools(h.mcpServer)
 
 	// 重新注册漏洞记录工具（内置工具，必须注册）
@@ -1542,6 +1583,21 @@ func (h *ConfigHandler) ApplyConfig(c *gin.Context) {
 	}
 	if h.mcpServer != nil {
 		h.mcpServer.ConfigureHTTPToolCallTimeoutFromAgentMinutes(h.config.Agent.ToolTimeoutMinutes)
+		h.mcpServer.ConfigureToolWaitTimeoutSeconds(h.config.Agent.ToolWaitTimeoutSeconds)
+		h.mcpServer.ConfigureToolResultMaxBytes(h.config.MultiAgent.EinoMiddleware.ReductionMaxLengthForTruncEffective())
+	}
+	if h.executor != nil {
+		h.executor.SetToolOutputMaxBytes(h.config.MultiAgent.EinoMiddleware.ReductionMaxLengthForTruncEffective())
+	}
+	if h.externalMCPMgr != nil {
+		h.externalMCPMgr.ConfigureToolWaitTimeoutSeconds(h.config.Agent.ToolWaitTimeoutSeconds)
+		h.externalMCPMgr.ConfigureToolResultMaxBytes(h.config.MultiAgent.EinoMiddleware.ReductionMaxLengthForTruncEffective())
+		h.externalMCPMgr.ConfigureResilience(mcp.ExternalMCPResilienceConfig{
+			MaxConcurrentPerServer:  h.config.Agent.ExternalMCPMaxConcurrentPerServer,
+			MaxConcurrentTotal:      h.config.Agent.ExternalMCPMaxConcurrentTotal,
+			CircuitFailureThreshold: h.config.Agent.ExternalMCPCircuitFailureThreshold,
+			CircuitCooldown:         time.Duration(h.config.Agent.ExternalMCPCircuitCooldownSeconds) * time.Second,
+		})
 	}
 
 	// 更新AttackChainHandler的OpenAI配置
@@ -1731,6 +1787,11 @@ func updateAgentConfig(doc *yaml.Node, agent config.AgentConfig) {
 	agentNode := ensureMap(root, "agent")
 	setIntInMap(agentNode, "max_iterations", agent.MaxIterations)
 	setIntInMap(agentNode, "tool_timeout_minutes", agent.ToolTimeoutMinutes)
+	setIntInMap(agentNode, "tool_wait_timeout_seconds", agent.ToolWaitTimeoutSeconds)
+	setIntInMap(agentNode, "external_mcp_max_concurrent_per_server", agent.ExternalMCPMaxConcurrentPerServer)
+	setIntInMap(agentNode, "external_mcp_max_concurrent_total", agent.ExternalMCPMaxConcurrentTotal)
+	setIntInMap(agentNode, "external_mcp_circuit_failure_threshold", agent.ExternalMCPCircuitFailureThreshold)
+	setIntInMap(agentNode, "external_mcp_circuit_cooldown_seconds", agent.ExternalMCPCircuitCooldownSeconds)
 	setStringInMap(agentNode, "system_prompt_path", agent.SystemPromptPath)
 }
 

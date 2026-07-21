@@ -167,7 +167,7 @@ func summarizeAccessibleExecutionPage(executions []*mcp.ToolExecution, topN int)
 			stats[exec.ToolName] = stat
 		}
 		stat.TotalCalls++
-		if exec.Status == "failed" || exec.Status == "cancelled" {
+		if monitorStatusCountsAsFailed(exec.Status) {
 			stat.FailedCalls++
 		} else if exec.Status == "completed" {
 			stat.SuccessCalls++
@@ -178,6 +178,15 @@ func summarizeAccessibleExecutionPage(executions []*mcp.ToolExecution, topN int)
 		}
 	}
 	return summarizeToolStats(stats, topN)
+}
+
+func monitorStatusCountsAsFailed(status string) bool {
+	switch strings.TrimSpace(strings.ToLower(status)) {
+	case "failed", "cancelled", "hard_timeout", "orphaned":
+		return true
+	default:
+		return false
+	}
 }
 
 func (h *MonitorHandler) monitorRetentionDays() int {
@@ -813,7 +822,7 @@ func (h *MonitorHandler) loadCallsTimeline(cfg callsTimelineConfig) []CallsTimel
 		key := truncateToBucket(exec.StartTime, cfg.bucketSize, cfg.dailyBuckets)
 		entry := bucketMap[key]
 		entry.total++
-		if exec.Status == "failed" || exec.Status == "cancelled" {
+		if monitorStatusCountsAsFailed(exec.Status) {
 			entry.failed++
 		}
 		bucketMap[key] = entry
@@ -876,7 +885,7 @@ func (h *MonitorHandler) DeleteExecution(c *gin.Context) {
 		totalCalls := 1
 		successCalls := 0
 		failedCalls := 0
-		if exec.Status == "failed" || exec.Status == "cancelled" {
+		if monitorStatusCountsAsFailed(exec.Status) {
 			failedCalls = 1
 		} else if exec.Status == "completed" {
 			successCalls = 1
@@ -951,7 +960,7 @@ func (h *MonitorHandler) DeleteExecutions(c *gin.Context) {
 
 			stats := toolStats[exec.ToolName]
 			stats.totalCalls++
-			if exec.Status == "failed" || exec.Status == "cancelled" {
+			if monitorStatusCountsAsFailed(exec.Status) {
 				stats.failedCalls++
 			} else if exec.Status == "completed" {
 				stats.successCalls++

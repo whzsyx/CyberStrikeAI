@@ -373,6 +373,7 @@ func summarizeProcessDetailData(eventType string, data interface{}) interface{} 
 		"success": true, "isError": true, "executionId": true,
 		"einoAgent": true, "einoRole": true, "einoScope": true, "orchestration": true,
 		"agentFacing": true,
+		"status": true, "modelFacingIsError": true, "resultPreview": true,
 	}
 	out := make(map[string]interface{}, len(allow)+1)
 	for k, v := range m {

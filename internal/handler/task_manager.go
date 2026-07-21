@@ -252,7 +252,7 @@ type AgentTaskManager struct {
 	maxHistorySize   int              // 最大历史记录数
 	historyRetention time.Duration    // 历史记录保留时间
 	eventBus         *TaskEventBus    // 可选：任务结束时关闭镜像 SSE 订阅
-	// toolCanceler 在用户整轮停止任务时终止当前 MCP 工具（非「中断并继续」）。
+	// toolCanceler 在用户整轮停止任务或会话结束时终止该会话仍在运行的 MCP 工具（非「中断并继续」）。
 	toolCanceler func(conversationID string)
 }
 
@@ -284,7 +284,7 @@ func (m *AgentTaskManager) SetTaskEventBus(b *TaskEventBus) {
 	m.eventBus = b
 }
 
-// SetToolCanceler 设置整轮停止任务时终止当前 MCP 工具的回调（由 AgentHandler 注入）。
+// SetToolCanceler 设置整轮停止任务/会话结束时终止仍在运行 MCP 工具的回调（由 AgentHandler 注入）。
 func (m *AgentTaskManager) SetToolCanceler(fn func(conversationID string)) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -444,6 +444,8 @@ func (m *AgentTaskManager) FinishTask(conversationID string, finalStatus string)
 	if finalStatus != "" {
 		task.Status = finalStatus
 	}
+	toolCanceler := m.toolCanceler
+	activeEinoExecuteCancel := task.activeEinoExecuteCancel
 
 	// 保存到历史记录
 	completedTask := &CompletedTask{
@@ -464,6 +466,12 @@ func (m *AgentTaskManager) FinishTask(conversationID string, finalStatus string)
 	delete(m.tasks, conversationID)
 	bus := m.eventBus
 	m.mu.Unlock()
+	if toolCanceler != nil {
+		toolCanceler(conversationID)
+	}
+	if activeEinoExecuteCancel != nil {
+		activeEinoExecuteCancel()
+	}
 	if bus != nil {
 		bus.CloseConversation(conversationID)
 	}

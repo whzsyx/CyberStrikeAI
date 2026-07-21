@@ -212,7 +212,7 @@ func (h *AgentHandler) CancelRunningTaskForConversation(conversationID string) {
 	if h == nil || conversationID == "" || h.tasks == nil {
 		return
 	}
-	h.cancelActiveMCPToolForConversation(conversationID)
+	h.cancelRunningMCPToolsForConversation(conversationID)
 	h.tasks.AbortActiveEinoExecute(conversationID, "")
 	if ok, err := h.tasks.CancelTask(conversationID, ErrTaskCancelled); ok {
 		h.logger.Info("已取消会话运行中任务", zap.String("conversationId", conversationID))
@@ -221,12 +221,13 @@ func (h *AgentHandler) CancelRunningTaskForConversation(conversationID string) {
 	}
 }
 
-func (h *AgentHandler) cancelActiveMCPToolForConversation(conversationID string) {
-	if h == nil || h.tasks == nil || h.agent == nil {
+func (h *AgentHandler) cancelRunningMCPToolsForConversation(conversationID string) {
+	if h == nil || h.agent == nil {
 		return
 	}
-	if execID := h.tasks.ActiveMCPExecutionID(conversationID); execID != "" {
-		h.agent.CancelMCPToolExecutionWithNote(execID, "")
+	n := h.agent.CancelRunningMCPToolsForConversation(conversationID, "会话已结束，自动终止仍在运行的工具")
+	if n > 0 && h.logger != nil {
+		h.logger.Info("已终止会话仍在运行的 MCP 工具", zap.String("conversationId", conversationID), zap.Int("count", n))
 	}
 }
 
@@ -266,7 +267,7 @@ func NewAgentHandler(agent *agent.Agent, db *database.DB, cfg *config.Config, lo
 		batchCronParser:  cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor),
 		auditLLM:         openai.NewClient(llmCfg, llmHTTP, logger),
 	}
-	tm.SetToolCanceler(handler.cancelActiveMCPToolForConversation)
+	tm.SetToolCanceler(handler.cancelRunningMCPToolsForConversation)
 	if err := handler.hitlManager.EnsureSchema(); err != nil {
 		logger.Warn("初始化 HITL 表失败", zap.Error(err))
 	}
@@ -1553,7 +1554,7 @@ func (h *AgentHandler) CancelAgentLoop(c *gin.Context) {
 
 	var cause error = ErrTaskCancelled
 	msg := "已提交取消请求，任务将在当前步骤完成后停止。"
-	h.cancelActiveMCPToolForConversation(req.ConversationID)
+	h.cancelRunningMCPToolsForConversation(req.ConversationID)
 	h.tasks.AbortActiveEinoExecute(req.ConversationID, "")
 	ok, err := h.tasks.CancelTask(req.ConversationID, cause)
 	if err != nil {

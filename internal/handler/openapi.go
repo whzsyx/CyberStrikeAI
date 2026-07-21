@@ -307,7 +307,7 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 						"status": map[string]interface{}{
 							"type":        "string",
 							"description": "执行状态",
-							"enum":        []string{"success", "failed", "running"},
+							"enum":        []string{"queued", "running", "completed", "failed", "cancelled", "hard_timeout", "orphaned"},
 						},
 						"result": map[string]interface{}{
 							"type":        "string",
@@ -778,7 +778,7 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 						"status": map[string]interface{}{
 							"type":        "string",
 							"description": "执行状态",
-							"enum":        []string{"success", "failed", "running"},
+							"enum":        []string{"queued", "running", "completed", "failed", "cancelled", "hard_timeout", "orphaned"},
 						},
 						"createdAt": map[string]interface{}{
 							"type":        "string",
@@ -839,6 +839,9 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 					"type":        "object",
 					"description": "配置信息（含 openai、vision、multi_agent 等）",
 					"properties": map[string]interface{}{
+						"agent": map[string]interface{}{
+							"$ref": "#/components/schemas/AgentConfig",
+						},
 						"vision": map[string]interface{}{
 							"$ref": "#/components/schemas/VisionConfig",
 						},
@@ -848,9 +851,28 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 					"type":        "object",
 					"description": "更新配置请求",
 					"properties": map[string]interface{}{
+						"agent": map[string]interface{}{
+							"$ref": "#/components/schemas/AgentConfig",
+						},
 						"vision": map[string]interface{}{
 							"$ref": "#/components/schemas/VisionConfig",
 						},
+					},
+				},
+				"AgentConfig": map[string]interface{}{
+					"type":        "object",
+					"description": "Agent 运行与外部 MCP 防卡死保护配置",
+					"properties": map[string]interface{}{
+						"max_iterations":                         map[string]interface{}{"type": "integer", "description": "最大迭代次数"},
+						"tool_timeout_minutes":                   map[string]interface{}{"type": "integer", "description": "单次工具执行硬超时（分钟）"},
+						"tool_wait_timeout_seconds":              map[string]interface{}{"type": "integer", "description": "工具单轮等待秒数；到时返回 execution_id，worker 继续后台执行"},
+						"external_mcp_max_concurrent_per_server": map[string]interface{}{"type": "integer", "description": "单个外部 MCP server 并发上限；0=默认2；负数=不限制"},
+						"external_mcp_max_concurrent_total":      map[string]interface{}{"type": "integer", "description": "外部 MCP 全局并发上限；0=默认16；负数=不限制"},
+						"external_mcp_circuit_failure_threshold": map[string]interface{}{"type": "integer", "description": "连续失败熔断阈值；0=默认3；负数=关闭熔断"},
+						"external_mcp_circuit_cooldown_seconds":  map[string]interface{}{"type": "integer", "description": "熔断冷却秒数；0=默认60"},
+						"shell_no_output_timeout_seconds":        map[string]interface{}{"type": "integer", "description": "execute/exec 连续无输出终止秒数"},
+						"workspace_root_dir":                     map[string]interface{}{"type": "string", "description": "会话工作目录根路径"},
+						"system_prompt_path":                     map[string]interface{}{"type": "string", "description": "单代理系统提示文件路径"},
 					},
 				},
 				"VisionConfig": map[string]interface{}{
@@ -3483,7 +3505,7 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 							"description": "状态筛选",
 							"schema": map[string]interface{}{
 								"type": "string",
-								"enum": []string{"success", "failed", "running"},
+								"enum": []string{"queued", "running", "completed", "failed", "cancelled", "hard_timeout", "orphaned"},
 							},
 						},
 						{
