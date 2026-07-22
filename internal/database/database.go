@@ -226,6 +226,10 @@ func (db *DB) initTables() error {
 		start_time DATETIME NOT NULL,
 		end_time DATETIME,
 		duration_ms INTEGER,
+		partial_output TEXT,
+		partial_output_bytes INTEGER NOT NULL DEFAULT 0,
+		partial_output_truncated INTEGER NOT NULL DEFAULT 0,
+		partial_output_updated_at DATETIME,
 		owner_user_id TEXT,
 		conversation_id TEXT,
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -954,6 +958,9 @@ func (db *DB) initTables() error {
 	if err := db.migrateWorkflowRunsTable(); err != nil {
 		db.logger.Warn("迁移workflow_runs表失败", zap.Error(err))
 	}
+	if err := db.migrateToolExecutionsPartialOutputColumns(); err != nil {
+		db.logger.Warn("迁移tool_executions partial output字段失败", zap.Error(err))
+	}
 	if err := db.migrateRBACOwnershipColumns(); err != nil {
 		db.logger.Warn("迁移RBAC资源归属字段失败", zap.Error(err))
 	}
@@ -974,6 +981,23 @@ func (db *DB) migrateRobotUserSessionsTable() error {
 	if count == 0 {
 		_, err := db.Exec("ALTER TABLE robot_user_sessions ADD COLUMN agent_mode TEXT NOT NULL DEFAULT 'eino_single'")
 		return err
+	}
+	return nil
+}
+
+func (db *DB) migrateToolExecutionsPartialOutputColumns() error {
+	for _, col := range []struct {
+		name string
+		stmt string
+	}{
+		{"partial_output", "ALTER TABLE tool_executions ADD COLUMN partial_output TEXT"},
+		{"partial_output_bytes", "ALTER TABLE tool_executions ADD COLUMN partial_output_bytes INTEGER NOT NULL DEFAULT 0"},
+		{"partial_output_truncated", "ALTER TABLE tool_executions ADD COLUMN partial_output_truncated INTEGER NOT NULL DEFAULT 0"},
+		{"partial_output_updated_at", "ALTER TABLE tool_executions ADD COLUMN partial_output_updated_at DATETIME"},
+	} {
+		if err := db.addColumnIfMissing("tool_executions", col.name, col.stmt); err != nil {
+			return err
+		}
 	}
 	return nil
 }

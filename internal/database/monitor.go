@@ -43,11 +43,19 @@ func (db *DB) SaveToolExecution(exec *mcp.ToolExecution) error {
 	if exec.Duration > 0 {
 		durationMs = sql.NullInt64{Int64: exec.Duration.Milliseconds(), Valid: true}
 	}
+	var partialUpdatedAt sql.NullTime
+	if exec.PartialOutputUpdatedAt != nil {
+		partialUpdatedAt = sql.NullTime{Time: *exec.PartialOutputUpdatedAt, Valid: true}
+	}
+	partialTruncated := 0
+	if exec.PartialOutputTruncated {
+		partialTruncated = 1
+	}
 
 	query := `
 		INSERT OR REPLACE INTO tool_executions 
-		(id, tool_name, arguments, status, result, error, start_time, end_time, duration_ms, owner_user_id, conversation_id, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		(id, tool_name, arguments, status, result, error, start_time, end_time, duration_ms, partial_output, partial_output_bytes, partial_output_truncated, partial_output_updated_at, owner_user_id, conversation_id, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	_, err = db.Exec(query,
@@ -60,6 +68,10 @@ func (db *DB) SaveToolExecution(exec *mcp.ToolExecution) error {
 		exec.StartTime,
 		endTime,
 		durationMs,
+		sqlNullString(exec.PartialOutput),
+		exec.PartialOutputBytes,
+		partialTruncated,
+		partialUpdatedAt,
 		strings.TrimSpace(exec.OwnerUserID),
 		strings.TrimSpace(exec.ConversationID),
 		time.Now(),
@@ -88,6 +100,13 @@ func (db *DB) UpdateToolExecutionResult(id string, result *mcp.ToolResult) error
 		db.logger.Warn("更新工具执行结果失败", zap.Error(err), zap.String("executionId", id))
 	}
 	return err
+}
+
+func sqlNullString(s string) sql.NullString {
+	if s == "" {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: s, Valid: true}
 }
 
 // CountToolExecutions 统计工具执行记录总数
@@ -488,7 +507,9 @@ func appendToolExecutionAccessSQL(query string, args []interface{}, access RBACL
 // GetToolExecution 根据ID获取单条工具执行记录
 func (db *DB) GetToolExecution(id string) (*mcp.ToolExecution, error) {
 	query := `
-		SELECT id, tool_name, arguments, status, result, error, start_time, end_time, duration_ms, COALESCE(owner_user_id, ''), COALESCE(conversation_id, '')
+		SELECT id, tool_name, arguments, status, result, error, start_time, end_time, duration_ms,
+		       COALESCE(partial_output, ''), COALESCE(partial_output_bytes, 0), COALESCE(partial_output_truncated, 0), partial_output_updated_at,
+		       COALESCE(owner_user_id, ''), COALESCE(conversation_id, '')
 		FROM tool_executions
 		WHERE id = ?
 	`
@@ -501,6 +522,8 @@ func (db *DB) GetToolExecution(id string) (*mcp.ToolExecution, error) {
 	var errorText sql.NullString
 	var endTime sql.NullTime
 	var durationMs sql.NullInt64
+	var partialTruncated int
+	var partialUpdatedAt sql.NullTime
 
 	err := row.Scan(
 		&exec.ID,
@@ -512,6 +535,10 @@ func (db *DB) GetToolExecution(id string) (*mcp.ToolExecution, error) {
 		&exec.StartTime,
 		&endTime,
 		&durationMs,
+		&exec.PartialOutput,
+		&exec.PartialOutputBytes,
+		&partialTruncated,
+		&partialUpdatedAt,
 		&exec.OwnerUserID,
 		&exec.ConversationID,
 	)
@@ -543,6 +570,10 @@ func (db *DB) GetToolExecution(id string) (*mcp.ToolExecution, error) {
 
 	if durationMs.Valid {
 		exec.Duration = time.Duration(durationMs.Int64) * time.Millisecond
+	}
+	exec.PartialOutputTruncated = partialTruncated != 0
+	if partialUpdatedAt.Valid {
+		exec.PartialOutputUpdatedAt = &partialUpdatedAt.Time
 	}
 
 	return &exec, nil
