@@ -2982,8 +2982,9 @@ function prefetchProcessDetailsSummaryHint(messageId, messageElement) {
             if (summaryMcpIds.length > 0) {
                 setPendingMcpExecutionIds(messageElement, summaryMcpIds);
             }
-            if (toolCount > 0) {
-                setMcpExecutionSummaryCount(messageElement, toolCount);
+            const buttonToolCount = summaryTools.length > 0 ? summaryTools.length : (toolCount || summaryMcpIds.length);
+            if (buttonToolCount > 0) {
+                setMcpExecutionSummaryCount(messageElement, buttonToolCount);
             }
             const timeline = detailsContainer.querySelector('.progress-timeline');
             if (!timeline || detailsContainer.dataset.loaded === '1') return;
@@ -3082,8 +3083,6 @@ function getPendingToolExecutionSummaryCount(messageElement) {
 }
 
 function getMcpExecutionCount(messageElement) {
-    const pending = getPendingMcpExecutionCount(messageElement);
-    if (pending > 0) return pending;
     const pendingSummaries = getPendingToolExecutionSummaryCount(messageElement);
     if (pendingSummaries > 0) return pendingSummaries;
     const toolList = messageElement && messageElement.querySelector('.mcp-tool-list');
@@ -3095,6 +3094,8 @@ function getMcpExecutionCount(messageElement) {
         const summaryCount = parseInt(messageElement.dataset.mcpExecutionCount, 10) || 0;
         if (summaryCount > 0) return summaryCount;
     }
+    const pending = getPendingMcpExecutionCount(messageElement);
+    if (pending > 0) return pending;
     return 0;
 }
 
@@ -3185,6 +3186,10 @@ function setPendingMcpExecutionIds(messageElement, executionIds) {
     } else {
         delete messageElement.dataset.pendingMcpExecutionIds;
     }
+    const renderedToolList = messageElement.querySelector('.mcp-tool-list');
+    if (ids.length > 0 && renderedToolList && renderedToolList.querySelector('.mcp-detail-btn')) {
+        renderMcpCallButtons(messageElement);
+    }
     if (typeof syncMcpToolsToggleButton === 'function') {
         syncMcpToolsToggleButton(messageElement);
     }
@@ -3248,6 +3253,18 @@ function mergeToolExecutionSummariesWithIds(summaries, executionIds) {
     });
 }
 
+function selectToolExecutionSummariesForButtons(summaries, executionIds) {
+    const normalizedSummaries = Array.isArray(summaries)
+        ? summaries.map(normalizeToolExecutionSummaryForButton)
+        : [];
+    const normalizedIds = normalizeMcpExecutionIds(executionIds);
+    if (normalizedIds.length === 0) return normalizedSummaries;
+    if (normalizedSummaries.length === 0) {
+        return normalizedIds.map((executionId) => normalizeToolExecutionSummaryForButton({ executionId }));
+    }
+    return mergeToolExecutionSummariesWithIds(normalizedSummaries, normalizedIds);
+}
+
 function setPendingToolExecutionSummaries(messageElement, summaries) {
     if (!messageElement || !messageElement.dataset || !Array.isArray(summaries)) return;
     const normalized = cacheToolExecutionSummaries(messageElement, summaries);
@@ -3260,7 +3277,6 @@ function setPendingToolExecutionSummaries(messageElement, summaries) {
     if (normalized.length > 0 && renderedToolList && renderedToolList.querySelector('.mcp-detail-btn')) {
         setMcpCallSummaries(messageElement, normalized);
         delete messageElement.dataset.pendingToolExecutionSummaries;
-        delete messageElement.dataset.pendingMcpExecutionIds;
     }
     if (typeof syncMcpToolsToggleButton === 'function') {
         syncMcpToolsToggleButton(messageElement);
@@ -3550,6 +3566,15 @@ async function fetchProcessDetailDataForModal(detailId) {
     return detail && detail.data ? detail.data : null;
 }
 
+function processToolResultTextFromData(resultData) {
+    if (!resultData) return '';
+    const noResultText = typeof window.t === 'function' ? window.t('timeline.noResult') : '无结果';
+    const result = resultData.result != null
+        ? resultData.result
+        : (resultData.error != null ? resultData.error : (resultData.resultPreview != null ? resultData.resultPreview : noResultText));
+    return typeof result === 'string' ? result : JSON.stringify(result);
+}
+
 function processToolResultToMCPResult(resultData, rawText) {
     if (!resultData) return null;
     const displayState = typeof window.getToolResultDisplayState === 'function'
@@ -3558,9 +3583,7 @@ function processToolResultToMCPResult(resultData, rawText) {
     const isError = !!displayState.isError;
     let text = rawText;
     if (text == null || String(text) === '') {
-        const noResultText = typeof window.t === 'function' ? window.t('timeline.noResult') : '无结果';
-        const result = resultData.result != null ? resultData.result : (resultData.error != null ? resultData.error : (resultData.resultPreview != null ? resultData.resultPreview : noResultText));
-        text = typeof result === 'string' ? result : JSON.stringify(result);
+        text = processToolResultTextFromData(resultData);
     }
     return {
         content: [{ type: 'text', text: String(text || '') }],
@@ -3591,8 +3614,14 @@ async function showMCPDetailFromProcessToolItem(messageElement, summary, index) 
         }
     }
     const resultDetailId = state.resultDetailId || target.dataset.toolResultDetailId || '';
-    if (!resultData && resultDetailId) {
-        resultData = await fetchProcessDetailDataForModal(resultDetailId);
+    const resultPayloadDeferred = resultData && resultData._payloadDeferred === true;
+    const resultOnlyHasPreview = resultData && resultData.result == null && resultData.error == null && resultData.resultPreview != null;
+    if (resultDetailId && (!resultData || resultPayloadDeferred || resultOnlyHasPreview)) {
+        const fullResult = await fetchProcessDetailDataForModal(resultDetailId);
+        if (fullResult) {
+            resultData = fullResult;
+            rawText = processToolResultTextFromData(fullResult);
+        }
     }
     const toolName = (summary && summary.toolName) || target.dataset.toolName || (typeof window.t === 'function' ? window.t('chat.unknownTool') : '未知工具');
     const displayState = resultData && typeof window.getToolResultDisplayState === 'function'
@@ -3639,7 +3668,7 @@ async function openTaskToolExecutionDetail(messageElement, item, index) {
 
 /**
  * 声明式渲染工具调用列表。
- * 过程摘要是展示详情入口的唯一模型；executionIds 仅在摘要尚未到达时提供占位。
+ * 过程摘要提供完整展示入口；executionIds 只补充可直接打开监控详情的 ID。
  * 每次更新整体替换列表，避免增量追加产生双重状态。
  */
 function renderMcpCallButtons(messageElement) {
@@ -3649,9 +3678,7 @@ function renderMcpCallButtons(messageElement) {
     const toolList = chrome.toolList;
     const executionIds = getCachedMcpExecutionIds(messageElement);
     const summaries = getCachedToolExecutionSummaries(messageElement);
-    const items = summaries.length > 0
-        ? mergeToolExecutionSummariesWithIds(summaries, executionIds)
-        : executionIds.map((executionId) => normalizeToolExecutionSummaryForButton({ executionId }));
+    const items = selectToolExecutionSummariesForButtons(summaries, executionIds);
 
     const renderVersion = String((parseInt(toolList.dataset.renderVersion, 10) || 0) + 1);
     toolList.dataset.renderVersion = renderVersion;
@@ -3718,7 +3745,6 @@ function renderPendingMcpCallButtons(messageElement) {
         delete messageElement.dataset.pendingToolExecutionSummaries;
     }
     if (renderedSummaryExecutions) {
-        delete messageElement.dataset.pendingMcpExecutionIds;
         return;
     }
     if (messageElement.dataset.pendingMcpExecutionIds) {
@@ -3825,9 +3851,6 @@ async function batchUpdateButtonToolNames(buttonsContainer, executionIds, render
     }
 }
 
-// 显示MCP调用详情
-const MCP_DETAIL_MAX_CHARS = 120000;
-
 function extractMCPResultText(result) {
     if (!result) return '';
     const content = result.content;
@@ -3844,37 +3867,18 @@ function extractMCPResultText(result) {
     return '';
 }
 
-function truncateMCPDetailText(text, maxChars) {
+function formatMCPDetailText(text) {
     if (text == null) return '';
-    const s = String(text);
-    if (s.length <= maxChars) return s;
-    const hint = typeof window.t === 'function'
-        ? window.t('mcpDetailModal.contentTruncated')
-        : '…（展示已截断；完整内容见 persisted-output 中的文件路径，用 read_file 读取）';
-    return s.slice(0, maxChars) + '\n\n' + hint;
+    return String(text);
 }
 
-/** 响应结果区 JSON 展示（过大时截断 content 内 text，避免 stringify 卡死页面） */
-function formatMCPResultJsonForDisplay(result, maxChars) {
+function formatMCPResultJsonForDisplay(result) {
     if (!result) return '{}';
     const payload = {
         content: result.content,
         isError: !!result.isError
     };
-    let json = JSON.stringify(payload, null, 2);
-    if (json.length <= maxChars) {
-        return json;
-    }
-    const text = extractMCPResultText(result);
-    const truncatedPayload = {
-        content: [{ type: 'text', text: truncateMCPDetailText(text, Math.min(maxChars - 800, MCP_DETAIL_MAX_CHARS)) }],
-        isError: !!result.isError
-    };
-    json = JSON.stringify(truncatedPayload, null, 2);
-    if (json.length > maxChars) {
-        return json.slice(0, maxChars) + '\n…';
-    }
-    return json;
+    return JSON.stringify(payload, null, 2);
 }
 
 function switchMCPResultDetailTab(tabName) {
@@ -3962,12 +3966,12 @@ function renderMCPDetailModal(exec) {
     setMCPResultDetailTabs('raw', false);
 
     if (exec.result) {
-        const agentVisibleText = truncateMCPDetailText(extractMCPResultText(exec.result), MCP_DETAIL_MAX_CHARS);
+        const agentVisibleText = formatMCPDetailText(extractMCPResultText(exec.result));
         const emptyText = typeof window.t === 'function' ? window.t('mcpDetailModal.execSuccessNoContent') : '执行成功，未返回可展示的文本内容。';
 
         if (exec.result.isError) {
             responseElement.className = 'code-block error';
-            responseElement.textContent = formatMCPResultJsonForDisplay(exec.result, MCP_DETAIL_MAX_CHARS);
+            responseElement.textContent = formatMCPResultJsonForDisplay(exec.result);
             if (successElement) {
                 successElement.textContent = '';
             }
@@ -3978,7 +3982,7 @@ function renderMCPDetailModal(exec) {
             }
         } else {
             responseElement.className = 'code-block';
-            responseElement.textContent = formatMCPResultJsonForDisplay(exec.result, MCP_DETAIL_MAX_CHARS);
+            responseElement.textContent = formatMCPResultJsonForDisplay(exec.result);
             if (successElement) {
                 successElement.textContent = agentVisibleText || emptyText;
             }

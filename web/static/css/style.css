@@ -5468,7 +5468,7 @@ html[data-theme="dark"] .login-card .login-submit:disabled {
 
 #mcp-detail-modal .detail-code-card {
     padding: 0;
-    overflow: hidden;
+    overflow: auto;
     background: #f8fafc;
     border: 1px solid rgba(148, 163, 184, 0.2);
     border-radius: 8px;
@@ -5530,6 +5530,7 @@ html[data-theme="dark"] .login-card .login-submit:disabled {
     font-size: 0.84rem;
     line-height: 1.7;
     white-space: pre-wrap;
+    overflow: auto;
     overflow-wrap: anywhere;
     word-break: break-word;
 }
