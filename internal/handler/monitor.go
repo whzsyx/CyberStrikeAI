@@ -182,7 +182,7 @@ func summarizeAccessibleExecutionPage(executions []*mcp.ToolExecution, topN int)
 
 func monitorStatusCountsAsFailed(status string) bool {
 	switch strings.TrimSpace(strings.ToLower(status)) {
-	case "failed", "cancelled", "hard_timeout", "orphaned":
+	case "failed", "hard_timeout", "orphaned":
 		return true
 	default:
 		return false
