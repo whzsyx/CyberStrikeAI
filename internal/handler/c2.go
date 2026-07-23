@@ -60,7 +60,7 @@ func (h *C2Handler) SetManager(m *c2.Manager) {
 
 // ListListeners 获取监听器列表
 func (h *C2Handler) ListListeners(c *gin.Context) {
-	listeners, err := h.mgr().DB().ListC2ListenersForAccess(c2AccessFromContext(c))
+	listeners, err := h.mgr().DB().ListC2ListenersForAccess(c2AccessFromContext(c), c.Query("project_id"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -77,6 +77,7 @@ func (h *C2Handler) ListListeners(c *gin.Context) {
 func (h *C2Handler) CreateListener(c *gin.Context) {
 	var req struct {
 		Name         string             `json:"name"`
+		ProjectID    string             `json:"project_id,omitempty"`
 		Type         string             `json:"type"`
 		BindHost     string             `json:"bind_host"`
 		BindPort     int                `json:"bind_port"`
@@ -92,6 +93,7 @@ func (h *C2Handler) CreateListener(c *gin.Context) {
 
 	input := c2.CreateListenerInput{
 		Name:         req.Name,
+		ProjectID:    req.ProjectID,
 		Type:         req.Type,
 		BindHost:     req.BindHost,
 		BindPort:     req.BindPort,
@@ -99,6 +101,10 @@ func (h *C2Handler) CreateListener(c *gin.Context) {
 		Remark:       req.Remark,
 		Config:       req.Config,
 		CallbackHost: strings.TrimSpace(req.CallbackHost),
+	}
+	if !h.canAccessProject(c, input.ProjectID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "project access denied"})
+		return
 	}
 
 	listener, err := h.mgr().CreateListener(input)
@@ -158,6 +164,7 @@ func (h *C2Handler) UpdateListener(c *gin.Context) {
 
 	var req struct {
 		Name         string             `json:"name"`
+		ProjectID    string             `json:"project_id"`
 		BindHost     string             `json:"bind_host"`
 		BindPort     int                `json:"bind_port"`
 		ProfileID    string             `json:"profile_id"`
@@ -179,6 +186,7 @@ func (h *C2Handler) UpdateListener(c *gin.Context) {
 	}
 
 	listener.Name = req.Name
+	listener.ProjectID = strings.TrimSpace(req.ProjectID)
 	listener.BindHost = req.BindHost
 	listener.BindPort = req.BindPort
 	listener.ProfileID = req.ProfileID
@@ -186,6 +194,10 @@ func (h *C2Handler) UpdateListener(c *gin.Context) {
 	if req.Config != nil {
 		cfgJSON, _ := json.Marshal(req.Config)
 		listener.ConfigJSON = string(cfgJSON)
+	}
+	if !h.canAccessProject(c, listener.ProjectID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "project access denied"})
+		return
 	}
 	if req.CallbackHost != nil {
 		cfg := &c2.ListenerConfig{}
@@ -275,6 +287,7 @@ func (h *C2Handler) StopListener(c *gin.Context) {
 func (h *C2Handler) ListSessions(c *gin.Context) {
 	filter := database.ListC2SessionsFilter{
 		ListenerID: c.Query("listener_id"),
+		ProjectID:  c.Query("project_id"),
 		Status:     c.Query("status"),
 		OS:         c.Query("os"),
 		Search:     c.Query("search"),
@@ -404,6 +417,47 @@ func (h *C2Handler) SetSessionSleep(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
+// SetSessionNote 更新会话备注（仅服务端元数据，不下发植入体）
+func (h *C2Handler) SetSessionNote(c *gin.Context) {
+	id := c.Param("id")
+	var req struct {
+		Note string `json:"note"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	note := strings.TrimSpace(req.Note)
+	if len(note) > 2000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "note too long (max 2000 characters)"})
+		return
+	}
+
+	session, err := h.mgr().DB().GetC2Session(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if session == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
+		return
+	}
+
+	if err := h.mgr().DB().SetC2SessionNote(id, note); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if h.audit != nil {
+		h.audit.RecordOK(c, "c2", "session_note", "更新 C2 会话备注", "c2_session", id, map[string]interface{}{
+			"note_len": len(note),
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"updated": true,
+		"note":    note,
+	})
+}
+
 // ============================================================================
 // 任务 API
 // ============================================================================
@@ -412,7 +466,14 @@ func (h *C2Handler) SetSessionSleep(c *gin.Context) {
 func (h *C2Handler) ListTasks(c *gin.Context) {
 	filter := database.ListC2TasksFilter{
 		SessionID: c.Query("session_id"),
+		ProjectID: c.Query("project_id"),
 		Status:    c.Query("status"),
+		TaskType:  c.Query("task_type"),
+	}
+	if since := c.Query("since"); since != "" {
+		if t, err := database.ParseRFC3339Time(since); err == nil {
+			filter.Since = &t
+		}
 	}
 
 	paginated := false
@@ -447,7 +508,7 @@ func (h *C2Handler) ListTasks(c *gin.Context) {
 	}
 
 	// 仪表盘「待审任务」为全局 queued/pending 数量，与列表 session 过滤无关
-	pendingN, _ := h.mgr().DB().CountC2TasksQueuedOrPendingForAccess("", access)
+	pendingN, _ := h.mgr().DB().CountC2TasksQueuedOrPendingForAccess("", filter.ProjectID, access)
 
 	if !paginated {
 		c.JSON(http.StatusOK, gin.H{
@@ -462,9 +523,15 @@ func (h *C2Handler) ListTasks(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	statusCounts, err := h.mgr().DB().CountC2TasksByStatusForAccess(filter, access)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"tasks":                tasks,
 		"total":                total,
+		"status_counts":        statusCounts,
 		"page":                 page,
 		"page_size":            pageSize,
 		"pending_queued_count": pendingN,
@@ -784,6 +851,7 @@ func (h *C2Handler) ListEvents(c *gin.Context) {
 	filter := database.ListC2EventsFilter{
 		Level:     c.Query("level"),
 		Category:  c.Query("category"),
+		ProjectID: c.Query("project_id"),
 		SessionID: c.Query("session_id"),
 		TaskID:    c.Query("task_id"),
 	}
@@ -1119,6 +1187,21 @@ func c2AccessFromContext(c *gin.Context) database.RBACListAccess {
 		return database.RBACListAccess{}
 	}
 	return database.RBACListAccess{UserID: session.UserID, Scope: session.Scope}
+}
+
+func (h *C2Handler) canAccessProject(c *gin.Context, projectID string) bool {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return true
+	}
+	session, ok := security.CurrentSession(c)
+	if !ok {
+		return false
+	}
+	if session.Scope == database.RBACScopeAll {
+		return true
+	}
+	return h.mgr().DB().UserCanAccessResource(session.UserID, session.Scope, "project", projectID)
 }
 
 func (h *C2Handler) c2ResourceAllowed(c *gin.Context, resourceType, resourceID string) bool {

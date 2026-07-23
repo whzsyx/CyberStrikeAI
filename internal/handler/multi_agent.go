@@ -158,6 +158,12 @@ func (h *AgentHandler) MultiAgentLoopStream(c *gin.Context) {
 
 	stopKeepalive := runSSEKeepalive(c, &sseWriteMu)
 	defer stopKeepalive()
+	runCfg, _, err := h.configForAIChannel(req.AIChannelID)
+	if err != nil {
+		sendEvent("error", err.Error(), nil)
+		sendEvent("done", "", map[string]interface{}{"conversationId": conversationID})
+		return
+	}
 
 	var result *multiagent.RunResult
 	var runErr error
@@ -232,8 +238,8 @@ func (h *AgentHandler) MultiAgentLoopStream(c *gin.Context) {
 
 		result, runErr = multiagent.RunDeepAgent(
 			taskCtxLoop,
-			h.config,
-			&h.config.MultiAgent,
+			runCfg,
+			&runCfg.MultiAgent,
 			h.agent,
 			h.db,
 			h.logger,
@@ -421,6 +427,11 @@ func (h *AgentHandler) MultiAgentLoop(c *gin.Context) {
 	taskCtx = multiagent.WithHITLToolInterceptor(taskCtx, func(ctx context.Context, toolName, arguments string) (string, error) {
 		return h.interceptHITLForEinoTool(ctx, cancelWithCause, prep.ConversationID, prep.AssistantMessageID, nil, toolName, arguments)
 	})
+	runCfg, _, err := h.configForAIChannel(req.AIChannelID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	curHist := prep.History
 	curMsg := prep.FinalMessage
@@ -429,8 +440,8 @@ func (h *AgentHandler) MultiAgentLoop(c *gin.Context) {
 	for {
 		result, runErr = multiagent.RunDeepAgent(
 			taskCtx,
-			h.config,
-			&h.config.MultiAgent,
+			runCfg,
+			&runCfg.MultiAgent,
 			h.agent,
 			h.db,
 			h.logger,

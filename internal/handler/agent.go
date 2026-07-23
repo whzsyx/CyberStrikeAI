@@ -341,10 +341,24 @@ type ChatRequest struct {
 	Role                 string                `json:"role,omitempty"`      // 角色名称
 	Attachments          []ChatAttachment      `json:"attachments,omitempty"`
 	WebShellConnectionID string                `json:"webshellConnectionId,omitempty"` // WebShell 管理 - AI 助手：当前选中的连接 ID，仅使用 webshell_* 工具
+	AIChannelID          string                `json:"aiChannelId,omitempty"`          // 会话级 AI 通道；空则使用 ai.default_channel
 	Hitl                 *HITLRequest          `json:"hitl,omitempty"`
 	Reasoning            *ChatReasoningRequest `json:"reasoning,omitempty"`
 	// Orchestration 仅对 /api/multi-agent、/api/multi-agent/stream：deep | plan_execute | supervisor；空则等同 deep。机器人/批量等无请求体时由服务端默认 deep。/api/eino-agent* 不使用此字段。
 	Orchestration string `json:"orchestration,omitempty"`
+}
+
+func (h *AgentHandler) configForAIChannel(channelID string) (*config.Config, string, error) {
+	if h == nil || h.config == nil {
+		return nil, "", fmt.Errorf("服务器配置未加载")
+	}
+	oa, resolvedID, ok := h.config.ResolveAIChannel(channelID)
+	if !ok {
+		return nil, resolvedID, fmt.Errorf("AI 通道不存在: %s", resolvedID)
+	}
+	cfgCopy := *h.config
+	cfgCopy.OpenAI = oa
+	return &cfgCopy, resolvedID, nil
 }
 
 func chatReasoningToClientIntent(r *ChatReasoningRequest) *reasoning.ClientIntent {

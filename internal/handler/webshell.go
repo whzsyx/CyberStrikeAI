@@ -352,26 +352,28 @@ func NewWebShellHandler(logger *zap.Logger, db *database.DB) *WebShellHandler {
 
 // CreateConnectionRequest 创建连接请求
 type CreateConnectionRequest struct {
-	URL      string `json:"url" binding:"required"`
-	Password string `json:"password"`
-	Type     string `json:"type"`
-	Method   string `json:"method"`
-	CmdParam string `json:"cmd_param"`
-	Remark   string `json:"remark"`
-	Encoding string `json:"encoding"`
-	OS       string `json:"os"`
+	ProjectID string `json:"project_id"`
+	URL       string `json:"url" binding:"required"`
+	Password  string `json:"password"`
+	Type      string `json:"type"`
+	Method    string `json:"method"`
+	CmdParam  string `json:"cmd_param"`
+	Remark    string `json:"remark"`
+	Encoding  string `json:"encoding"`
+	OS        string `json:"os"`
 }
 
 // UpdateConnectionRequest 更新连接请求
 type UpdateConnectionRequest struct {
-	URL      string `json:"url" binding:"required"`
-	Password string `json:"password"`
-	Type     string `json:"type"`
-	Method   string `json:"method"`
-	CmdParam string `json:"cmd_param"`
-	Remark   string `json:"remark"`
-	Encoding string `json:"encoding"`
-	OS       string `json:"os"`
+	ProjectID string `json:"project_id"`
+	URL       string `json:"url" binding:"required"`
+	Password  string `json:"password"`
+	Type      string `json:"type"`
+	Method    string `json:"method"`
+	CmdParam  string `json:"cmd_param"`
+	Remark    string `json:"remark"`
+	Encoding  string `json:"encoding"`
+	OS        string `json:"os"`
 }
 
 // ListConnections 列出所有 WebShell 连接（GET /api/webshell/connections）
@@ -381,7 +383,7 @@ func (h *WebShellHandler) ListConnections(c *gin.Context) {
 		return
 	}
 	session, _ := security.CurrentSession(c)
-	list, err := h.db.ListWebshellConnectionsForAccess(session.UserID, session.Scope)
+	list, err := h.db.ListWebshellConnectionsForAccess(session.UserID, session.Scope, c.Query("project_id"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -412,6 +414,11 @@ func (h *WebShellHandler) CreateConnection(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid url"})
 		return
 	}
+	projectID := strings.TrimSpace(req.ProjectID)
+	if !h.canAccessProject(c, projectID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "project access denied"})
+		return
+	}
 	method := strings.ToLower(strings.TrimSpace(req.Method))
 	if method != "get" && method != "post" {
 		method = "post"
@@ -422,6 +429,7 @@ func (h *WebShellHandler) CreateConnection(c *gin.Context) {
 	}
 	conn := &database.WebShellConnection{
 		ID:        "ws_" + strings.ReplaceAll(uuid.New().String(), "-", "")[:12],
+		ProjectID: projectID,
 		URL:       req.URL,
 		Password:  strings.TrimSpace(req.Password),
 		Type:      shellType,
@@ -477,6 +485,11 @@ func (h *WebShellHandler) UpdateConnection(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid url"})
 		return
 	}
+	projectID := strings.TrimSpace(req.ProjectID)
+	if !h.canAccessProject(c, projectID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "project access denied"})
+		return
+	}
 	method := strings.ToLower(strings.TrimSpace(req.Method))
 	if method != "get" && method != "post" {
 		method = "post"
@@ -486,15 +499,16 @@ func (h *WebShellHandler) UpdateConnection(c *gin.Context) {
 		shellType = "php"
 	}
 	conn := &database.WebShellConnection{
-		ID:       id,
-		URL:      req.URL,
-		Password: strings.TrimSpace(req.Password),
-		Type:     shellType,
-		Method:   method,
-		CmdParam: strings.TrimSpace(req.CmdParam),
-		Remark:   strings.TrimSpace(req.Remark),
-		Encoding: normalizeWebshellEncoding(req.Encoding),
-		OS:       normalizeWebshellOS(req.OS),
+		ID:        id,
+		ProjectID: projectID,
+		URL:       req.URL,
+		Password:  strings.TrimSpace(req.Password),
+		Type:      shellType,
+		Method:    method,
+		CmdParam:  strings.TrimSpace(req.CmdParam),
+		Remark:    strings.TrimSpace(req.Remark),
+		Encoding:  normalizeWebshellEncoding(req.Encoding),
+		OS:        normalizeWebshellOS(req.OS),
 	}
 	if err := h.db.UpdateWebshellConnection(conn); err != nil {
 		if err == sql.ErrNoRows {
@@ -938,6 +952,21 @@ func (h *WebShellHandler) authorizedWebshellConnection(c *gin.Context, connectio
 		return nil, false
 	}
 	return conn, true
+}
+
+func (h *WebShellHandler) canAccessProject(c *gin.Context, projectID string) bool {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" || h.db == nil {
+		return true
+	}
+	session, ok := security.CurrentSession(c)
+	if !ok {
+		return false
+	}
+	if session.Scope == database.RBACScopeAll {
+		return true
+	}
+	return h.db.UserCanAccessResource(session.UserID, session.Scope, "project", projectID)
 }
 
 // ExecWithConnection 在指定 WebShell 连接上执行命令（供 MCP/Agent 等非 HTTP 调用）

@@ -149,6 +149,14 @@ func (h *AgentHandler) EinoSingleAgentLoopStream(c *gin.Context) {
 		sendEvent("done", "", map[string]interface{}{"conversationId": conversationID})
 		return
 	}
+	runCfg, resolvedAIChannelID, err := h.configForAIChannel(req.AIChannelID)
+	if err != nil {
+		taskStatus = "failed"
+		h.tasks.UpdateTaskStatus(conversationID, taskStatus)
+		sendEvent("error", err.Error(), nil)
+		sendEvent("done", "", map[string]interface{}{"conversationId": conversationID})
+		return
+	}
 
 	var result *multiagent.RunResult
 	var runErr error
@@ -222,8 +230,8 @@ func (h *AgentHandler) EinoSingleAgentLoopStream(c *gin.Context) {
 
 		result, runErr = multiagent.RunEinoSingleChatModelAgent(
 			taskCtxLoop,
-			h.config,
-			&h.config.MultiAgent,
+			runCfg,
+			&runCfg.MultiAgent,
 			h.agent,
 			h.db,
 			h.logger,
@@ -236,6 +244,7 @@ func (h *AgentHandler) EinoSingleAgentLoopStream(c *gin.Context) {
 			chatReasoningToClientIntent(req.Reasoning),
 			h.agentSessionContextBlock(conversationID),
 		)
+		_ = resolvedAIChannelID
 
 		if result != nil && len(result.MCPExecutionIDs) > 0 {
 			cumulativeMCPExecutionIDs = mergeMCPExecutionIDLists(cumulativeMCPExecutionIDs, result.MCPExecutionIDs)
@@ -410,6 +419,11 @@ func (h *AgentHandler) EinoSingleAgentLoop(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器配置未加载"})
 		return
 	}
+	runCfg, _, err := h.configForAIChannel(req.AIChannelID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	curHist := prep.History
 	curMsg := prep.FinalMessage
@@ -418,8 +432,8 @@ func (h *AgentHandler) EinoSingleAgentLoop(c *gin.Context) {
 	for {
 		result, runErr = multiagent.RunEinoSingleChatModelAgent(
 			taskCtx,
-			h.config,
-			&h.config.MultiAgent,
+			runCfg,
+			&runCfg.MultiAgent,
 			h.agent,
 			h.db,
 			h.logger,

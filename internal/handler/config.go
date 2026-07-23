@@ -258,6 +258,7 @@ func (h *ConfigHandler) ApplyWechatRobotBinding(wc config.RobotWechatConfig) err
 
 // GetConfigResponse 获取配置响应
 type GetConfigResponse struct {
+	AI         config.AIConfig          `json:"ai"`
 	OpenAI     config.OpenAIConfig      `json:"openai"`
 	Vision     config.VisionConfig      `json:"vision"`
 	FOFA       config.FofaConfig        `json:"fofa"`
@@ -363,6 +364,7 @@ func (h *ConfigHandler) GetConfig(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, GetConfigResponse{
+		AI:         h.config.AI,
 		OpenAI:     h.config.OpenAI,
 		Vision:     h.config.Vision,
 		FOFA:       h.config.FOFA,
@@ -706,6 +708,7 @@ func (h *ConfigHandler) GetTools(c *gin.Context) {
 
 // UpdateConfigRequest 更新配置请求
 type UpdateConfigRequest struct {
+	AI         *config.AIConfig            `json:"ai,omitempty"`
 	OpenAI     *config.OpenAIConfig        `json:"openai,omitempty"`
 	Vision     *config.VisionConfig        `json:"vision,omitempty"`
 	FOFA       *config.FofaConfig          `json:"fofa,omitempty"`
@@ -785,8 +788,20 @@ func (h *ConfigHandler) UpdateConfig(c *gin.Context) {
 	defer h.mu.Unlock()
 
 	// 更新OpenAI配置
+	if req.AI != nil {
+		h.config.AI = *req.AI
+		h.config.ApplyDefaultAIChannel()
+		h.logger.Info("更新 AI 通道配置",
+			zap.String("default_channel", h.config.AI.DefaultChannel),
+			zap.Int("channels", len(h.config.AI.Channels)),
+		)
+	}
 	if req.OpenAI != nil {
 		h.config.OpenAI = *req.OpenAI
+		h.config.AI.EnsureDefaultFromOpenAI(h.config.OpenAI)
+		if def := config.NormalizeAIChannelID(h.config.AI.DefaultChannel); def != "" {
+			h.config.AI.Channels[def] = config.AIChannelFromOpenAI(def, "Default", h.config.OpenAI)
+		}
 		h.logger.Info("更新OpenAI配置",
 			zap.String("base_url", h.config.OpenAI.BaseURL),
 			zap.String("model", h.config.OpenAI.Model),
@@ -1683,7 +1698,8 @@ func (h *ConfigHandler) saveConfig() error {
 
 	updateAgentConfig(root, h.config.Agent)
 	updateMCPConfig(root, h.config.MCP)
-	updateOpenAIConfig(root, h.config.OpenAI)
+	updateAIConfig(root, h.config.AI)
+	removeKeyFromMap(root.Content[0], "openai")
 	updateVisionConfig(root, h.config.Vision)
 	updateFOFAConfig(root, h.config.FOFA)
 	updateSpaceSearchConfig(root, "zoomeye", h.config.ZoomEye)
@@ -1874,6 +1890,69 @@ func updateOpenAIConfig(doc *yaml.Node, cfg config.OpenAIConfig) {
 	}
 	if strings.TrimSpace(cfg.Reasoning.Profile) != "" {
 		setStringInMap(rn, "profile", cfg.Reasoning.Profile)
+	}
+}
+
+func updateAIConfig(doc *yaml.Node, cfg config.AIConfig) {
+	root := doc.Content[0]
+	aiNode := ensureMap(root, "ai")
+	if strings.TrimSpace(cfg.DefaultChannel) != "" {
+		setStringInMap(aiNode, "default_channel", config.NormalizeAIChannelID(cfg.DefaultChannel))
+	}
+	channelsNode := ensureMap(aiNode, "channels")
+	channelsNode.Content = nil
+	normalized := make(map[string]config.AIChannelConfig, len(cfg.Channels))
+	ids := make([]string, 0, len(cfg.Channels))
+	for id, ch := range cfg.Channels {
+		nid := config.NormalizeAIChannelID(id)
+		if nid == "" {
+			continue
+		}
+		if _, exists := normalized[nid]; !exists {
+			ids = append(ids, nid)
+		}
+		normalized[nid] = ch
+	}
+	sort.Strings(ids)
+	seen := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		ch := normalized[id]
+		keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: id}
+		channelNode := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+		channelsNode.Content = append(channelsNode.Content, keyNode, channelNode)
+		setStringInMap(channelNode, "name", ch.Name)
+		if strings.TrimSpace(ch.Provider) != "" {
+			setStringInMap(channelNode, "provider", ch.Provider)
+		}
+		setStringInMap(channelNode, "api_key", ch.APIKey)
+		setStringInMap(channelNode, "base_url", ch.BaseURL)
+		setStringInMap(channelNode, "model", ch.Model)
+		if ch.MaxTotalTokens > 0 {
+			setIntInMap(channelNode, "max_total_tokens", ch.MaxTotalTokens)
+		}
+		if ch.MaxCompletionTokens > 0 {
+			setIntInMap(channelNode, "max_completion_tokens", ch.MaxCompletionTokens)
+		}
+		rn := ensureMap(channelNode, "reasoning")
+		if strings.TrimSpace(ch.Reasoning.Mode) != "" {
+			setStringInMap(rn, "mode", ch.Reasoning.Mode)
+		}
+		if strings.TrimSpace(ch.Reasoning.Effort) != "" {
+			setStringInMap(rn, "effort", ch.Reasoning.Effort)
+		}
+		if ch.Reasoning.AllowClientReasoning != nil {
+			setBoolInMap(rn, "allow_client_reasoning", *ch.Reasoning.AllowClientReasoning)
+		}
+		if strings.TrimSpace(ch.Reasoning.Profile) != "" {
+			setStringInMap(rn, "profile", ch.Reasoning.Profile)
+		}
+		if len(rn.Content) == 0 {
+			removeKeyFromMap(channelNode, "reasoning")
+		}
 	}
 }
 
