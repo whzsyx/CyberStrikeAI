@@ -87,7 +87,7 @@ tcp_reverse 默认仅接受 CSB1 加密 Beacon（AES-GCM + ImplantToken）才登
 
 		switch action {
 		case "list":
-			listeners, err := m.DB().ListC2ListenersForAccess(c2ToolAccess(ctx))
+			listeners, err := m.DB().ListC2ListenersForAccess(c2ToolAccess(ctx), mcpEffectiveProjectFilter(ctx, m.DB()))
 			if err != nil {
 				return makeC2Result(nil, err)
 			}
@@ -123,6 +123,7 @@ tcp_reverse 默认仅接受 CSB1 加密 Beacon（AES-GCM + ImplantToken）才登
 				BindPort:     int(getFloat64(params, "bind_port")),
 				ProfileID:    getString(params, "profile_id"),
 				Remark:       getString(params, "remark"),
+				ProjectID:    strings.TrimSpace(mcp.MCPProjectIDFromContext(ctx)),
 				Config:       cfg,
 				CallbackHost: getString(params, "callback_host"),
 			}
@@ -260,6 +261,7 @@ func registerC2SessionTool(s *mcp.Server, m *c2.Manager, l *zap.Logger) {
 		case "list":
 			filter := database.ListC2SessionsFilter{
 				ListenerID: getString(params, "listener_id"),
+				ProjectID:  mcpEffectiveProjectFilter(ctx, m.DB()),
 				Status:     getString(params, "status"),
 				OS:         getString(params, "os"),
 				Search:     getString(params, "search"),
@@ -495,6 +497,7 @@ func registerC2TaskManageTool(s *mcp.Server, m *c2.Manager, l *zap.Logger) {
 		case "list":
 			filter := database.ListC2TasksFilter{
 				SessionID: getString(params, "session_id"),
+				ProjectID: mcpEffectiveProjectFilter(ctx, m.DB()),
 				Status:    getString(params, "status"),
 			}
 			if limit := int(getFloat64(params, "limit")); limit > 0 {
@@ -645,6 +648,7 @@ func registerC2EventTool(s *mcp.Server, m *c2.Manager, l *zap.Logger) {
 		filter := database.ListC2EventsFilter{
 			Level:     getString(params, "level"),
 			Category:  getString(params, "category"),
+			ProjectID: mcpEffectiveProjectFilter(ctx, m.DB()),
 			SessionID: getString(params, "session_id"),
 			TaskID:    getString(params, "task_id"),
 			Limit:     int(getFloat64(params, "limit")),

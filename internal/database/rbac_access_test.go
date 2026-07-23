@@ -373,22 +373,46 @@ func TestRBACBatchResourceAssignmentValidationAndAtomicity(t *testing.T) {
 
 func TestRBACWebshellAndBatchListAccess(t *testing.T) {
 	db := newRBACTestDB(t)
-	ws1 := WebShellConnection{ID: "ws_visible", URL: "http://a", Type: "php", Method: "post", CreatedAt: time.Now()}
-	ws2 := WebShellConnection{ID: "ws_hidden", URL: "http://b", Type: "php", Method: "post", CreatedAt: time.Now()}
+	ws1 := WebShellConnection{ID: "ws_visible", ProjectID: "p1", URL: "http://a", Type: "php", Method: "post", CreatedAt: time.Now()}
+	ws2 := WebShellConnection{ID: "ws_hidden", ProjectID: "p2", URL: "http://b", Type: "php", Method: "post", CreatedAt: time.Now()}
+	ws3 := WebShellConnection{ID: "ws_other_project", ProjectID: "p2", URL: "http://c", Type: "php", Method: "post", CreatedAt: time.Now()}
+	ws4 := WebShellConnection{ID: "ws_unbound", URL: "http://d", Type: "php", Method: "post", CreatedAt: time.Now()}
 	if err := db.CreateWebshellConnection(&ws1); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.CreateWebshellConnection(&ws2); err != nil {
 		t.Fatal(err)
 	}
+	if err := db.CreateWebshellConnection(&ws3); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateWebshellConnection(&ws4); err != nil {
+		t.Fatal(err)
+	}
 	_ = db.SetResourceOwner("webshell", ws1.ID, "u1")
 	_ = db.SetResourceOwner("webshell", ws2.ID, "u2")
-	webshells, err := db.ListWebshellConnectionsForAccess("u1", RBACScopeOwn)
+	_ = db.SetResourceOwner("webshell", ws3.ID, "u1")
+	_ = db.SetResourceOwner("webshell", ws4.ID, "u1")
+	webshells, err := db.ListWebshellConnectionsForAccess("u1", RBACScopeOwn, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(webshells) != 3 {
+		t.Fatalf("webshells = %#v, want 3 owned webshells including unbound", webshells)
+	}
+	webshells, err = db.ListWebshellConnectionsForAccess("u1", RBACScopeOwn, "p1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(webshells) != 1 || webshells[0].ID != ws1.ID {
-		t.Fatalf("webshells = %#v, want only %s", webshells, ws1.ID)
+		t.Fatalf("webshells scoped to p1 = %#v, want only %s", webshells, ws1.ID)
+	}
+	webshells, err = db.ListWebshellConnectionsForAccess("u1", RBACScopeOwn, ProjectFilterUnbound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(webshells) != 1 || webshells[0].ID != ws4.ID {
+		t.Fatalf("unbound webshells = %#v, want only %s", webshells, ws4.ID)
 	}
 
 	if err := db.CreateBatchQueue("q_visible", "visible", "", "eino_single", "manual", "", nil, "", 1, []map[string]interface{}{{"id": "t1", "message": "a"}}); err != nil {
@@ -411,12 +435,20 @@ func TestRBACWebshellAndBatchListAccess(t *testing.T) {
 func TestRBACC2AccessInheritsListener(t *testing.T) {
 	db := newRBACTestDB(t)
 	now := time.Now()
-	l1 := &C2Listener{ID: "l_visible", Name: "visible", Type: "http_beacon", BindHost: "127.0.0.1", BindPort: 9001, OwnerUserID: "u1", CreatedAt: now}
-	l2 := &C2Listener{ID: "l_hidden", Name: "hidden", Type: "http_beacon", BindHost: "127.0.0.1", BindPort: 9002, OwnerUserID: "u2", CreatedAt: now}
+	l1 := &C2Listener{ID: "l_visible", ProjectID: "p1", Name: "visible", Type: "http_beacon", BindHost: "127.0.0.1", BindPort: 9001, OwnerUserID: "u1", CreatedAt: now}
+	l2 := &C2Listener{ID: "l_hidden", ProjectID: "p2", Name: "hidden", Type: "http_beacon", BindHost: "127.0.0.1", BindPort: 9002, OwnerUserID: "u2", CreatedAt: now}
+	l3 := &C2Listener{ID: "l_other_project", ProjectID: "p2", Name: "other project", Type: "http_beacon", BindHost: "127.0.0.1", BindPort: 9003, OwnerUserID: "u1", CreatedAt: now}
+	l4 := &C2Listener{ID: "l_unbound", Name: "unbound", Type: "http_beacon", BindHost: "127.0.0.1", BindPort: 9004, OwnerUserID: "u1", CreatedAt: now}
 	if err := db.CreateC2Listener(l1); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.CreateC2Listener(l2); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateC2Listener(l3); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateC2Listener(l4); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.UpsertC2Session(&C2Session{ID: "s_visible", ListenerID: l1.ID, ImplantUUID: "implant-visible", Status: "active", FirstSeenAt: now, LastCheckIn: now}); err != nil {
@@ -425,10 +457,22 @@ func TestRBACC2AccessInheritsListener(t *testing.T) {
 	if err := db.UpsertC2Session(&C2Session{ID: "s_hidden", ListenerID: l2.ID, ImplantUUID: "implant-hidden", Status: "active", FirstSeenAt: now, LastCheckIn: now}); err != nil {
 		t.Fatal(err)
 	}
+	if err := db.UpsertC2Session(&C2Session{ID: "s_other_project", ListenerID: l3.ID, ImplantUUID: "implant-other-project", Status: "active", FirstSeenAt: now, LastCheckIn: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpsertC2Session(&C2Session{ID: "s_unbound", ListenerID: l4.ID, ImplantUUID: "implant-unbound", Status: "active", FirstSeenAt: now, LastCheckIn: now}); err != nil {
+		t.Fatal(err)
+	}
 	if err := db.CreateC2Task(&C2Task{ID: "t_visible", SessionID: "s_visible", TaskType: "shell", Status: "queued", CreatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.CreateC2Task(&C2Task{ID: "t_hidden", SessionID: "s_hidden", TaskType: "shell", Status: "queued", CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateC2Task(&C2Task{ID: "t_other_project", SessionID: "s_other_project", TaskType: "shell", Status: "queued", CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateC2Task(&C2Task{ID: "t_unbound", SessionID: "s_unbound", TaskType: "shell", Status: "queued", CreatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.AppendC2Event(&C2Event{ID: "e_visible", Level: "info", Category: "task", SessionID: "s_visible", TaskID: "t_visible", Message: "visible", CreatedAt: now}); err != nil {
@@ -437,35 +481,97 @@ func TestRBACC2AccessInheritsListener(t *testing.T) {
 	if err := db.AppendC2Event(&C2Event{ID: "e_hidden", Level: "info", Category: "task", SessionID: "s_hidden", TaskID: "t_hidden", Message: "hidden", CreatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
+	if err := db.AppendC2Event(&C2Event{ID: "e_other_project", Level: "info", Category: "task", SessionID: "s_other_project", TaskID: "t_other_project", Message: "other project", CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AppendC2Event(&C2Event{ID: "e_unbound", Level: "info", Category: "task", SessionID: "s_unbound", TaskID: "t_unbound", Message: "unbound", CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
 
 	access := RBACListAccess{UserID: "u1", Scope: RBACScopeOwn}
-	listeners, err := db.ListC2ListenersForAccess(access)
+	listeners, err := db.ListC2ListenersForAccess(access, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listeners) != 3 {
+		t.Fatalf("listeners = %#v, want 3 owned listeners including unbound", listeners)
+	}
+	listeners, err = db.ListC2ListenersForAccess(access, "p1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(listeners) != 1 || listeners[0].ID != l1.ID {
-		t.Fatalf("listeners = %#v, want only %s", listeners, l1.ID)
+		t.Fatalf("listeners scoped to p1 = %#v, want only %s", listeners, l1.ID)
+	}
+	listeners, err = db.ListC2ListenersForAccess(access, ProjectFilterUnbound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listeners) != 1 || listeners[0].ID != l4.ID {
+		t.Fatalf("unbound listeners = %#v, want only %s", listeners, l4.ID)
 	}
 	sessions, err := db.ListC2SessionsForAccess(ListC2SessionsFilter{}, access)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(sessions) != 3 {
+		t.Fatalf("sessions = %#v, want 3 owned sessions including unbound", sessions)
+	}
+	sessions, err = db.ListC2SessionsForAccess(ListC2SessionsFilter{ProjectID: "p1"}, access)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(sessions) != 1 || sessions[0].ID != "s_visible" {
-		t.Fatalf("sessions = %#v, want only s_visible", sessions)
+		t.Fatalf("sessions scoped to p1 = %#v, want only s_visible", sessions)
+	}
+	sessions, err = db.ListC2SessionsForAccess(ListC2SessionsFilter{ProjectID: ProjectFilterUnbound}, access)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 1 || sessions[0].ID != "s_unbound" {
+		t.Fatalf("unbound sessions = %#v, want only s_unbound", sessions)
 	}
 	tasks, err := db.ListC2TasksForAccess(ListC2TasksFilter{}, access)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(tasks) != 3 {
+		t.Fatalf("tasks = %#v, want 3 owned tasks including unbound", tasks)
+	}
+	tasks, err = db.ListC2TasksForAccess(ListC2TasksFilter{ProjectID: "p1"}, access)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(tasks) != 1 || tasks[0].ID != "t_visible" {
-		t.Fatalf("tasks = %#v, want only t_visible", tasks)
+		t.Fatalf("tasks scoped to p1 = %#v, want only t_visible", tasks)
+	}
+	tasks, err = db.ListC2TasksForAccess(ListC2TasksFilter{ProjectID: ProjectFilterUnbound}, access)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 1 || tasks[0].ID != "t_unbound" {
+		t.Fatalf("unbound tasks = %#v, want only t_unbound", tasks)
 	}
 	events, err := db.ListC2EventsForAccess(ListC2EventsFilter{}, access)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(events) != 3 {
+		t.Fatalf("events = %#v, want 3 owned events including unbound", events)
+	}
+	events, err = db.ListC2EventsForAccess(ListC2EventsFilter{ProjectID: "p1"}, access)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(events) != 1 || events[0].ID != "e_visible" {
-		t.Fatalf("events = %#v, want only e_visible", events)
+		t.Fatalf("events scoped to p1 = %#v, want only e_visible", events)
+	}
+	events, err = db.ListC2EventsForAccess(ListC2EventsFilter{ProjectID: ProjectFilterUnbound}, access)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].ID != "e_unbound" {
+		t.Fatalf("unbound events = %#v, want only e_unbound", events)
 	}
 	if !db.UserCanAccessResource("u1", RBACScopeOwn, "c2_task", "t_visible") {
 		t.Fatalf("expected listener ownership to allow task detail")

@@ -46,6 +46,7 @@ func validC2TextIDForDelete(id string) bool {
 // C2Listener 监听器实体
 type C2Listener struct {
 	ID            string     `json:"id"`
+	ProjectID     string     `json:"project_id,omitempty"`
 	Name          string     `json:"name"`
 	Type          string     `json:"type"`       // tcp_reverse|http_beacon|https_beacon|websocket|dns
 	BindHost      string     `json:"bindHost"`   // 默认 127.0.0.1
@@ -165,12 +166,12 @@ func (db *DB) CreateC2Listener(l *C2Listener) error {
 		l.ConfigJSON = "{}"
 	}
 	query := `
-		INSERT INTO c2_listeners (id, name, type, bind_host, bind_port, profile_id, encryption_key,
+		INSERT INTO c2_listeners (id, project_id, name, type, bind_host, bind_port, profile_id, encryption_key,
 			implant_token, status, config_json, remark, owner_user_id, created_at, started_at, last_error)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	_, err := db.Exec(query,
-		l.ID, l.Name, l.Type, l.BindHost, l.BindPort, l.ProfileID, l.EncryptionKey,
+		l.ID, strings.TrimSpace(l.ProjectID), l.Name, l.Type, l.BindHost, l.BindPort, l.ProfileID, l.EncryptionKey,
 		l.ImplantToken, l.Status, l.ConfigJSON, l.Remark, l.OwnerUserID, l.CreatedAt, l.StartedAt, l.LastError,
 	)
 	if err != nil {
@@ -190,12 +191,12 @@ func (db *DB) UpdateC2Listener(l *C2Listener) error {
 	}
 	query := `
 		UPDATE c2_listeners SET
-			name = ?, type = ?, bind_host = ?, bind_port = ?, profile_id = ?, encryption_key = ?,
+			project_id = ?, name = ?, type = ?, bind_host = ?, bind_port = ?, profile_id = ?, encryption_key = ?,
 			implant_token = ?, status = ?, config_json = ?, remark = ?, owner_user_id = ?, started_at = ?, last_error = ?
 		WHERE id = ?
 	`
 	res, err := db.Exec(query,
-		l.Name, l.Type, l.BindHost, l.BindPort, l.ProfileID, l.EncryptionKey,
+		strings.TrimSpace(l.ProjectID), l.Name, l.Type, l.BindHost, l.BindPort, l.ProfileID, l.EncryptionKey,
 		l.ImplantToken, l.Status, l.ConfigJSON, l.Remark, l.OwnerUserID, l.StartedAt, l.LastError, l.ID,
 	)
 	if err != nil {
@@ -229,7 +230,7 @@ func (db *DB) SetC2ListenerStatus(id, status, lastError string, startedAt *time.
 // GetC2Listener 单条查询
 func (db *DB) GetC2Listener(id string) (*C2Listener, error) {
 	query := `
-		SELECT id, name, type, bind_host, bind_port, COALESCE(profile_id, ''),
+		SELECT id, COALESCE(project_id, ''), name, type, bind_host, bind_port, COALESCE(profile_id, ''),
 			COALESCE(encryption_key, ''), COALESCE(implant_token, ''), status,
 			COALESCE(config_json, '{}'), COALESCE(remark, ''),
 			COALESCE(owner_user_id, ''), created_at, started_at, COALESCE(last_error, '')
@@ -238,7 +239,7 @@ func (db *DB) GetC2Listener(id string) (*C2Listener, error) {
 	var l C2Listener
 	var startedAt sql.NullTime
 	err := db.QueryRow(query, id).Scan(
-		&l.ID, &l.Name, &l.Type, &l.BindHost, &l.BindPort, &l.ProfileID,
+		&l.ID, &l.ProjectID, &l.Name, &l.Type, &l.BindHost, &l.BindPort, &l.ProfileID,
 		&l.EncryptionKey, &l.ImplantToken, &l.Status,
 		&l.ConfigJSON, &l.Remark,
 		&l.OwnerUserID, &l.CreatedAt, &startedAt, &l.LastError,
@@ -259,7 +260,7 @@ func (db *DB) GetC2Listener(id string) (*C2Listener, error) {
 // ListC2Listeners 全量列表，按创建时间倒序
 func (db *DB) ListC2Listeners() ([]*C2Listener, error) {
 	query := `
-		SELECT id, name, type, bind_host, bind_port, COALESCE(profile_id, ''),
+		SELECT id, COALESCE(project_id, ''), name, type, bind_host, bind_port, COALESCE(profile_id, ''),
 			COALESCE(encryption_key, ''), COALESCE(implant_token, ''), status,
 			COALESCE(config_json, '{}'), COALESCE(remark, ''),
 			COALESCE(owner_user_id, ''), created_at, started_at, COALESCE(last_error, '')
@@ -275,7 +276,7 @@ func (db *DB) ListC2Listeners() ([]*C2Listener, error) {
 		var l C2Listener
 		var startedAt sql.NullTime
 		if err := rows.Scan(
-			&l.ID, &l.Name, &l.Type, &l.BindHost, &l.BindPort, &l.ProfileID,
+			&l.ID, &l.ProjectID, &l.Name, &l.Type, &l.BindHost, &l.BindPort, &l.ProfileID,
 			&l.EncryptionKey, &l.ImplantToken, &l.Status,
 			&l.ConfigJSON, &l.Remark,
 			&l.OwnerUserID, &l.CreatedAt, &startedAt, &l.LastError,
@@ -293,12 +294,18 @@ func (db *DB) ListC2Listeners() ([]*C2Listener, error) {
 }
 
 // ListC2ListenersForAccess lists listeners visible to the resolved RBAC scope.
-func (db *DB) ListC2ListenersForAccess(access RBACListAccess) ([]*C2Listener, error) {
+func (db *DB) ListC2ListenersForAccess(access RBACListAccess, projectID string) ([]*C2Listener, error) {
 	conditions := []string{"1=1"}
 	args := []interface{}{}
+	if projectID = strings.TrimSpace(projectID); projectID == ProjectFilterUnbound {
+		conditions = append(conditions, "COALESCE(project_id, '') = ''")
+	} else if projectID != "" {
+		conditions = append(conditions, "COALESCE(project_id, '') = ?")
+		args = append(args, projectID)
+	}
 	appendC2ListenerAccessFilter(&conditions, &args, access)
 	query := `
-		SELECT id, name, type, bind_host, bind_port, COALESCE(profile_id, ''),
+		SELECT id, COALESCE(project_id, ''), name, type, bind_host, bind_port, COALESCE(profile_id, ''),
 			COALESCE(encryption_key, ''), COALESCE(implant_token, ''), status,
 			COALESCE(config_json, '{}'), COALESCE(remark, ''),
 			COALESCE(owner_user_id, ''), created_at, started_at, COALESCE(last_error, '')
@@ -316,7 +323,7 @@ func (db *DB) ListC2ListenersForAccess(access RBACListAccess) ([]*C2Listener, er
 		var l C2Listener
 		var startedAt sql.NullTime
 		if err := rows.Scan(
-			&l.ID, &l.Name, &l.Type, &l.BindHost, &l.BindPort, &l.ProfileID,
+			&l.ID, &l.ProjectID, &l.Name, &l.Type, &l.BindHost, &l.BindPort, &l.ProfileID,
 			&l.EncryptionKey, &l.ImplantToken, &l.Status,
 			&l.ConfigJSON, &l.Remark, &l.OwnerUserID,
 			&l.CreatedAt, &startedAt, &l.LastError,
@@ -535,6 +542,7 @@ func (db *DB) queryC2SessionWhere(whereClause string, args ...interface{}) (*C2S
 // ListC2SessionsFilter 列表过滤参数
 type ListC2SessionsFilter struct {
 	ListenerID string
+	ProjectID  string
 	Status     string // active|sleeping|dead|killed；空表示全部
 	OS         string
 	Search     string // 模糊匹配 hostname/username/internal_ip
@@ -549,6 +557,18 @@ func (db *DB) ListC2Sessions(filter ListC2SessionsFilter) ([]*C2Session, error) 
 	if filter.ListenerID != "" {
 		conditions = append(conditions, "listener_id = ?")
 		args = append(args, filter.ListenerID)
+	}
+	if strings.TrimSpace(filter.ProjectID) == ProjectFilterUnbound {
+		conditions = append(conditions, `EXISTS (
+			SELECT 1 FROM c2_listeners l
+			WHERE l.id = c2_sessions.listener_id AND COALESCE(l.project_id, '') = ''
+		)`)
+	} else if strings.TrimSpace(filter.ProjectID) != "" {
+		conditions = append(conditions, `EXISTS (
+			SELECT 1 FROM c2_listeners l
+			WHERE l.id = c2_sessions.listener_id AND COALESCE(l.project_id, '') = ?
+		)`)
+		args = append(args, strings.TrimSpace(filter.ProjectID))
 	}
 	if filter.Status != "" {
 		conditions = append(conditions, "status = ?")
@@ -644,6 +664,18 @@ func buildC2SessionsWhere(filter ListC2SessionsFilter) ([]string, []interface{})
 	if filter.ListenerID != "" {
 		conditions = append(conditions, "listener_id = ?")
 		args = append(args, filter.ListenerID)
+	}
+	if strings.TrimSpace(filter.ProjectID) == ProjectFilterUnbound {
+		conditions = append(conditions, `EXISTS (
+			SELECT 1 FROM c2_listeners l
+			WHERE l.id = c2_sessions.listener_id AND COALESCE(l.project_id, '') = ''
+		)`)
+	} else if strings.TrimSpace(filter.ProjectID) != "" {
+		conditions = append(conditions, `EXISTS (
+			SELECT 1 FROM c2_listeners l
+			WHERE l.id = c2_sessions.listener_id AND COALESCE(l.project_id, '') = ?
+		)`)
+		args = append(args, strings.TrimSpace(filter.ProjectID))
 	}
 	if filter.Status != "" {
 		conditions = append(conditions, "status = ?")
@@ -947,7 +979,10 @@ func (db *DB) GetC2Task(id string) (*C2Task, error) {
 // ListC2TasksFilter 任务过滤
 type ListC2TasksFilter struct {
 	SessionID string
+	ProjectID string
 	Status    string
+	TaskType  string
+	Since     *time.Time
 	Limit     int
 	Offset    int
 }
@@ -959,9 +994,31 @@ func buildC2TasksWhere(filter ListC2TasksFilter) (where string, args []interface
 		conditions = append(conditions, "session_id = ?")
 		args = append(args, filter.SessionID)
 	}
+	if strings.TrimSpace(filter.ProjectID) == ProjectFilterUnbound {
+		conditions = append(conditions, `EXISTS (
+			SELECT 1 FROM c2_sessions s
+			JOIN c2_listeners l ON l.id = s.listener_id
+			WHERE s.id = c2_tasks.session_id AND COALESCE(l.project_id, '') = ''
+		)`)
+	} else if strings.TrimSpace(filter.ProjectID) != "" {
+		conditions = append(conditions, `EXISTS (
+			SELECT 1 FROM c2_sessions s
+			JOIN c2_listeners l ON l.id = s.listener_id
+			WHERE s.id = c2_tasks.session_id AND COALESCE(l.project_id, '') = ?
+		)`)
+		args = append(args, strings.TrimSpace(filter.ProjectID))
+	}
 	if filter.Status != "" {
 		conditions = append(conditions, "status = ?")
 		args = append(args, filter.Status)
+	}
+	if strings.TrimSpace(filter.TaskType) != "" {
+		conditions = append(conditions, "task_type = ?")
+		args = append(args, strings.TrimSpace(filter.TaskType))
+	}
+	if filter.Since != nil {
+		conditions = append(conditions, sqliteEpochGE("created_at", ">="))
+		args = append(args, formatSQLiteUTC(*filter.Since))
 	}
 	return strings.Join(conditions, " AND "), args
 }
@@ -1016,6 +1073,43 @@ func (db *DB) CountC2TasksForAccess(filter ListC2TasksFilter, access RBACListAcc
 	return n, err
 }
 
+// CountC2TasksByStatusForAccess 与 ListC2Tasks 相同过滤条件下按状态统计
+func (db *DB) CountC2TasksByStatusForAccess(filter ListC2TasksFilter, access RBACListAccess) (map[string]int64, error) {
+	where, args := buildC2TasksWhereForAccess(filter, access)
+	query := `SELECT status, COUNT(*) FROM c2_tasks WHERE ` + where + ` GROUP BY status`
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	counts := map[string]int64{
+		"queued":    0,
+		"sent":      0,
+		"running":   0,
+		"success":   0,
+		"failed":    0,
+		"cancelled": 0,
+		"pending":   0,
+	}
+	var legacyPending int64
+	for rows.Next() {
+		var status string
+		var n int64
+		if err := rows.Scan(&status, &n); err != nil {
+			continue
+		}
+		if status == "pending" {
+			legacyPending = n
+			continue
+		}
+		if _, ok := counts[status]; ok {
+			counts[status] = n
+		}
+	}
+	counts["pending"] = counts["queued"] + counts["sent"] + counts["running"] + legacyPending
+	return counts, rows.Err()
+}
+
 // CountC2TasksQueuedOrPending 统计 queued/pending 状态任务数（仪表盘「待审任务」）
 func (db *DB) CountC2TasksQueuedOrPending(sessionID string) (int64, error) {
 	conditions := []string{"status IN ('queued', 'pending')"}
@@ -1030,8 +1124,8 @@ func (db *DB) CountC2TasksQueuedOrPending(sessionID string) (int64, error) {
 	return n, err
 }
 
-func (db *DB) CountC2TasksQueuedOrPendingForAccess(sessionID string, access RBACListAccess) (int64, error) {
-	filter := ListC2TasksFilter{SessionID: sessionID}
+func (db *DB) CountC2TasksQueuedOrPendingForAccess(sessionID, projectID string, access RBACListAccess) (int64, error) {
+	filter := ListC2TasksFilter{SessionID: sessionID, ProjectID: projectID}
 	where, args := buildC2TasksWhereForAccess(filter, access)
 	query := `SELECT COUNT(*) FROM c2_tasks WHERE status IN ('queued', 'pending') AND ` + where
 	var n int64
@@ -1412,6 +1506,7 @@ func (db *DB) AppendC2Event(e *C2Event) error {
 type ListC2EventsFilter struct {
 	Level     string
 	Category  string
+	ProjectID string
 	SessionID string
 	TaskID    string
 	Since     *time.Time
@@ -1429,6 +1524,49 @@ func buildC2EventsWhere(filter ListC2EventsFilter) (where string, args []interfa
 	if filter.Category != "" {
 		conditions = append(conditions, "category = ?")
 		args = append(args, filter.Category)
+	}
+	if strings.TrimSpace(filter.ProjectID) == ProjectFilterUnbound {
+		conditions = append(conditions, `(
+			EXISTS (
+				SELECT 1 FROM c2_sessions s
+				JOIN c2_listeners l ON l.id = s.listener_id
+				WHERE s.id = c2_events.session_id AND COALESCE(l.project_id, '') = ''
+			)
+			OR EXISTS (
+				SELECT 1 FROM c2_tasks t
+				JOIN c2_sessions s ON s.id = t.session_id
+				JOIN c2_listeners l ON l.id = s.listener_id
+				WHERE t.id = c2_events.task_id AND COALESCE(l.project_id, '') = ''
+			)
+			OR EXISTS (
+				SELECT 1 FROM c2_listeners l
+				WHERE json_valid(c2_events.data_json)
+					AND l.id = json_extract(c2_events.data_json, '$.listener_id')
+					AND COALESCE(l.project_id, '') = ''
+			)
+		)`)
+	} else if strings.TrimSpace(filter.ProjectID) != "" {
+		conditions = append(conditions, `(
+			EXISTS (
+				SELECT 1 FROM c2_sessions s
+				JOIN c2_listeners l ON l.id = s.listener_id
+				WHERE s.id = c2_events.session_id AND COALESCE(l.project_id, '') = ?
+			)
+			OR EXISTS (
+				SELECT 1 FROM c2_tasks t
+				JOIN c2_sessions s ON s.id = t.session_id
+				JOIN c2_listeners l ON l.id = s.listener_id
+				WHERE t.id = c2_events.task_id AND COALESCE(l.project_id, '') = ?
+			)
+			OR EXISTS (
+				SELECT 1 FROM c2_listeners l
+				WHERE json_valid(c2_events.data_json)
+					AND l.id = json_extract(c2_events.data_json, '$.listener_id')
+					AND COALESCE(l.project_id, '') = ?
+			)
+		)`)
+		pid := strings.TrimSpace(filter.ProjectID)
+		args = append(args, pid, pid, pid)
 	}
 	if filter.SessionID != "" {
 		conditions = append(conditions, "session_id = ?")

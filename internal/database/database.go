@@ -494,6 +494,7 @@ func (db *DB) initTables() error {
 	createWebshellConnectionsTable := `
 	CREATE TABLE IF NOT EXISTS webshell_connections (
 		id TEXT PRIMARY KEY,
+		project_id TEXT,
 		url TEXT NOT NULL,
 		password TEXT NOT NULL DEFAULT '',
 		type TEXT NOT NULL DEFAULT 'php',
@@ -520,6 +521,7 @@ func (db *DB) initTables() error {
 	createC2ListenersTable := `
 	CREATE TABLE IF NOT EXISTS c2_listeners (
 		id TEXT PRIMARY KEY,
+		project_id TEXT,
 		name TEXT NOT NULL,
 		type TEXT NOT NULL,
 		bind_host TEXT NOT NULL DEFAULT '127.0.0.1',
@@ -756,8 +758,10 @@ func (db *DB) initTables() error {
 	CREATE INDEX IF NOT EXISTS idx_batch_task_queues_created_at ON batch_task_queues(created_at);
 	CREATE INDEX IF NOT EXISTS idx_batch_task_queues_title ON batch_task_queues(title);
 	CREATE INDEX IF NOT EXISTS idx_webshell_connections_created_at ON webshell_connections(created_at);
+	CREATE INDEX IF NOT EXISTS idx_webshell_connections_project_id ON webshell_connections(project_id);
 	CREATE INDEX IF NOT EXISTS idx_webshell_connection_states_updated_at ON webshell_connection_states(updated_at);
 	CREATE INDEX IF NOT EXISTS idx_c2_listeners_created_at ON c2_listeners(created_at);
+	CREATE INDEX IF NOT EXISTS idx_c2_listeners_project_id ON c2_listeners(project_id);
 	CREATE INDEX IF NOT EXISTS idx_c2_listeners_status ON c2_listeners(status);
 	CREATE INDEX IF NOT EXISTS idx_c2_sessions_listener ON c2_sessions(listener_id);
 	CREATE INDEX IF NOT EXISTS idx_c2_sessions_status ON c2_sessions(status);
@@ -955,6 +959,9 @@ func (db *DB) initTables() error {
 	if err := db.migrateWebshellConnectionsTable(); err != nil {
 		db.logger.Warn("迁移webshell_connections表失败", zap.Error(err))
 		// 不返回错误，允许继续运行
+	}
+	if err := db.migrateC2ListenersTable(); err != nil {
+		db.logger.Warn("迁移c2_listeners表失败", zap.Error(err))
 	}
 	if err := db.migrateWorkflowRunsTable(); err != nil {
 		db.logger.Warn("迁移workflow_runs表失败", zap.Error(err))
@@ -1610,6 +1617,7 @@ func (db *DB) migrateWebshellConnectionsTable() error {
 		name string
 		stmt string
 	}{
+		{name: "project_id", stmt: "ALTER TABLE webshell_connections ADD COLUMN project_id TEXT"},
 		{name: "encoding", stmt: "ALTER TABLE webshell_connections ADD COLUMN encoding TEXT NOT NULL DEFAULT ''"},
 		{name: "os", stmt: "ALTER TABLE webshell_connections ADD COLUMN os TEXT NOT NULL DEFAULT ''"},
 	}
@@ -1633,6 +1641,10 @@ func (db *DB) migrateWebshellConnectionsTable() error {
 		}
 	}
 	return nil
+}
+
+func (db *DB) migrateC2ListenersTable() error {
+	return db.addColumnIfMissing("c2_listeners", "project_id", "ALTER TABLE c2_listeners ADD COLUMN project_id TEXT")
 }
 
 // NewKnowledgeDB 创建知识库数据库连接（只包含知识库相关的表）

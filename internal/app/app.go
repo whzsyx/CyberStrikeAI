@@ -1313,6 +1313,7 @@ func setupRoutes(
 		c2Routes.GET("/sessions/:id", c2Handler.GetSession)
 		c2Routes.DELETE("/sessions/:id", c2Handler.DeleteSession)
 		c2Routes.PUT("/sessions/:id/sleep", c2Handler.SetSessionSleep)
+		c2Routes.PUT("/sessions/:id/note", c2Handler.SetSessionNote)
 		c2Routes.GET("/tasks", c2Handler.ListTasks)
 		c2Routes.DELETE("/tasks", c2Handler.DeleteTasks)
 		c2Routes.GET("/tasks/:id", c2Handler.GetTask)
@@ -1574,22 +1575,62 @@ func registerWebshellManagementTools(mcpServer *mcp.Server, db *database.DB, web
 		logger.Warn("跳过 WebShell 管理工具注册：db 为空")
 		return
 	}
+	projectIDFromToolArgs := func(ctx context.Context, args map[string]interface{}) string {
+		projectID, _ := args["project_id"].(string)
+		projectID = strings.TrimSpace(projectID)
+		if projectID == "" {
+			projectID = strings.TrimSpace(mcp.MCPProjectIDFromContext(ctx))
+		}
+		return projectID
+	}
+	explicitProjectIDFromToolArgs := func(args map[string]interface{}) string {
+		projectID, _ := args["project_id"].(string)
+		return strings.TrimSpace(projectID)
+	}
+	authorizeWebshellToolProject := func(principal authctx.Principal, permission, projectID string) *mcp.ToolResult {
+		projectID = strings.TrimSpace(projectID)
+		if projectID == "" {
+			return nil
+		}
+		if projectID == database.ProjectFilterUnbound {
+			return nil
+		}
+		if !db.UserCanAccessResource(principal.UserID, principal.ScopeFor(permission), "project", projectID) {
+			return &mcp.ToolResult{
+				Content: []mcp.Content{{Type: "text", Text: "无权访问项目: " + projectID}},
+				IsError: true,
+			}
+		}
+		return nil
+	}
 
 	// manage_webshell_list - 列出所有 webshell 连接
 	listTool := mcp.Tool{
 		Name:             builtin.ToolManageWebshellList,
-		Description:      "列出所有已保存的 WebShell 连接，返回连接ID、URL、类型、备注等信息。",
+		Description:      "列出已保存的 WebShell 连接，返回连接ID、URL、类型、所属项目、备注等信息。默认按当前对话项目边界过滤：项目对话看本项目，未绑定项目的对话看未绑定连接；显式传 project_id 时按指定项目过滤。",
 		ShortDescription: "列出所有 WebShell 连接",
 		InputSchema: map[string]interface{}{
-			"type":       "object",
-			"properties": map[string]interface{}{},
+			"type": "object",
+			"properties": map[string]interface{}{
+				"project_id": map[string]interface{}{
+					"type":        "string",
+					"description": "项目 ID；不填时在项目会话中默认使用当前项目。",
+				},
+			},
 		},
 	}
 	listHandler := func(ctx context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
 		connections := []database.WebShellConnection{}
 		var err error
 		if principal, ok := authctx.PrincipalFromContext(ctx); ok {
-			connections, err = db.ListWebshellConnectionsForAccess(principal.UserID, principal.ScopeFor("webshell:read"))
+			projectID := explicitProjectIDFromToolArgs(args)
+			if projectID == "" {
+				projectID = mcpEffectiveProjectFilter(ctx, db)
+			}
+			if result := authorizeWebshellToolProject(principal, "webshell:read", projectID); result != nil {
+				return result, nil
+			}
+			connections, err = db.ListWebshellConnectionsForAccess(principal.UserID, principal.ScopeFor("webshell:read"), projectID)
 		} else {
 			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "缺少认证身份"}}, IsError: true}, nil
 		}
@@ -1613,6 +1654,11 @@ func registerWebshellManagementTools(mcpServer *mcp.Server, db *database.DB, web
 			sb.WriteString(fmt.Sprintf("  类型: %s\n", conn.Type))
 			sb.WriteString(fmt.Sprintf("  请求方式: %s\n", conn.Method))
 			sb.WriteString(fmt.Sprintf("  命令参数: %s\n", conn.CmdParam))
+			if conn.ProjectID != "" {
+				sb.WriteString(fmt.Sprintf("  项目ID: %s\n", conn.ProjectID))
+			} else {
+				sb.WriteString("  项目: 未绑定\n")
+			}
 			if conn.Remark != "" {
 				sb.WriteString(fmt.Sprintf("  备注: %s\n", conn.Remark))
 			}
@@ -1687,6 +1733,14 @@ func registerWebshellManagementTools(mcpServer *mcp.Server, db *database.DB, web
 			cmdParam = "cmd"
 		}
 		remark, _ := args["remark"].(string)
+		principal, ok := authctx.PrincipalFromContext(ctx)
+		if !ok {
+			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "缺少认证身份"}}, IsError: true}, nil
+		}
+		projectID := projectIDFromToolArgs(ctx, args)
+		if result := authorizeWebshellToolProject(principal, "webshell:write", projectID); result != nil {
+			return result, nil
+		}
 
 		// 生成连接ID
 		connID := "ws_" + strings.ReplaceAll(uuid.New().String(), "-", "")[:12]
@@ -1698,6 +1752,7 @@ func registerWebshellManagementTools(mcpServer *mcp.Server, db *database.DB, web
 			Method:    strings.ToLower(method),
 			CmdParam:  cmdParam,
 			Remark:    remark,
+			ProjectID: projectID,
 			CreatedAt: time.Now(),
 		}
 
@@ -1707,15 +1762,17 @@ func registerWebshellManagementTools(mcpServer *mcp.Server, db *database.DB, web
 				IsError: true,
 			}, nil
 		}
-		if principal, ok := authctx.PrincipalFromContext(ctx); ok {
-			_ = db.SetResourceOwner("webshell", conn.ID, principal.UserID)
-			_ = db.AssignResourceToUser(principal.UserID, "webshell", conn.ID)
+		_ = db.SetResourceOwner("webshell", conn.ID, principal.UserID)
+		_ = db.AssignResourceToUser(principal.UserID, "webshell", conn.ID)
+		projectLine := "项目: 未绑定"
+		if conn.ProjectID != "" {
+			projectLine = "项目ID: " + conn.ProjectID
 		}
 
 		return &mcp.ToolResult{
 			Content: []mcp.Content{{
 				Type: "text",
-				Text: fmt.Sprintf("WebShell 连接添加成功！\n\n连接ID: %s\nURL: %s\n类型: %s\n请求方式: %s\n命令参数: %s", conn.ID, conn.URL, conn.Type, conn.Method, conn.CmdParam),
+				Text: fmt.Sprintf("WebShell 连接添加成功！\n\n连接ID: %s\nURL: %s\n类型: %s\n请求方式: %s\n命令参数: %s\n%s", conn.ID, conn.URL, conn.Type, conn.Method, conn.CmdParam, projectLine),
 			}},
 			IsError: false,
 		}, nil
@@ -1760,6 +1817,10 @@ func registerWebshellManagementTools(mcpServer *mcp.Server, db *database.DB, web
 					"type":        "string",
 					"description": "新的备注",
 				},
+				"project_id": map[string]interface{}{
+					"type":        "string",
+					"description": "新的所属项目 ID；传空字符串可取消绑定。",
+				},
 			},
 			"required": []string{"connection_id"},
 		},
@@ -1801,6 +1862,19 @@ func registerWebshellManagementTools(mcpServer *mcp.Server, db *database.DB, web
 		if remark, ok := args["remark"].(string); ok {
 			existing.Remark = remark
 		}
+		if projectID, ok := args["project_id"].(string); ok {
+			projectID = strings.TrimSpace(projectID)
+			if projectID != "" {
+				principal, ok := authctx.PrincipalFromContext(ctx)
+				if !ok {
+					return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: "缺少认证身份"}}, IsError: true}, nil
+				}
+				if result := authorizeWebshellToolProject(principal, "webshell:write", projectID); result != nil {
+					return result, nil
+				}
+			}
+			existing.ProjectID = projectID
+		}
 
 		if err := db.UpdateWebshellConnection(existing); err != nil {
 			return &mcp.ToolResult{
@@ -1812,7 +1886,7 @@ func registerWebshellManagementTools(mcpServer *mcp.Server, db *database.DB, web
 		return &mcp.ToolResult{
 			Content: []mcp.Content{{
 				Type: "text",
-				Text: fmt.Sprintf("WebShell 连接更新成功！\n\n连接ID: %s\nURL: %s\n类型: %s\n请求方式: %s\n命令参数: %s\n备注: %s", existing.ID, existing.URL, existing.Type, existing.Method, existing.CmdParam, existing.Remark),
+				Text: fmt.Sprintf("WebShell 连接更新成功！\n\n连接ID: %s\nURL: %s\n类型: %s\n请求方式: %s\n命令参数: %s\n项目ID: %s\n备注: %s", existing.ID, existing.URL, existing.Type, existing.Method, existing.CmdParam, existing.ProjectID, existing.Remark),
 			}},
 			IsError: false,
 		}, nil

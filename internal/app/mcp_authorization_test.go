@@ -49,6 +49,91 @@ func TestMCPToolAuthorizerEnforcesPermissionAndResource(t *testing.T) {
 	}
 }
 
+func TestMCPToolAuthorizerEnforcesConversationProjectBoundary(t *testing.T) {
+	db, err := database.NewDB(filepath.Join(t.TempDir(), "mcp-project-boundary.db"), zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	user, err := db.CreateRBACUser("boundary-user", "Boundary User", "hash", true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := db.CreateProject(&database.Project{Name: "Project 123"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectConv, err := db.CreateConversation("project conversation", database.ConversationCreateMeta{ProjectID: project.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unboundConv, err := db.CreateConversation("unbound conversation", database.ConversationCreateMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wsProject := database.WebShellConnection{ID: "ws_project", ProjectID: project.ID, URL: "http://127.0.0.1/project.php", Type: "php", Method: "post", CreatedAt: time.Now()}
+	wsUnbound := database.WebShellConnection{ID: "ws_unbound", URL: "http://127.0.0.1/unbound.php", Type: "php", Method: "post", CreatedAt: time.Now()}
+	if err := db.CreateWebshellConnection(&wsProject); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CreateWebshellConnection(&wsUnbound); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{wsProject.ID, wsUnbound.ID} {
+		if err := db.AssignResourceToUser(user.ID, "webshell", id); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	now := time.Now()
+	listener := &database.C2Listener{ID: "l_project", ProjectID: project.ID, Name: "project listener", Type: "tcp_reverse", BindHost: "127.0.0.1", BindPort: 5555, OwnerUserID: user.ID, CreatedAt: now}
+	if err := db.CreateC2Listener(listener); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AssignResourceToUser(user.ID, "c2_listener", listener.ID); err != nil {
+		t.Fatal(err)
+	}
+	session := &database.C2Session{ID: "s_project", ListenerID: listener.ID, ImplantUUID: "implant-project", Status: "active", FirstSeenAt: now, LastCheckIn: now}
+	if err := db.UpsertC2Session(session); err != nil {
+		t.Fatal(err)
+	}
+
+	principal := authctx.NewPrincipal(user.ID, user.Username, database.RBACScopeAssigned, map[string]bool{
+		"webshell:read": true, "webshell:write": true,
+		"c2:read": true, "c2:write": true,
+	})
+	authorize := mcpToolAuthorizer(db)
+	unboundCtx := authctx.WithPrincipal(mcp.WithMCPConversationID(context.Background(), unboundConv.ID), principal)
+	projectCtx := authctx.WithPrincipal(mcp.WithMCPProjectID(mcp.WithMCPConversationID(context.Background(), projectConv.ID), project.ID), principal)
+	projectCtxFromConversationOnly := authctx.WithPrincipal(mcp.WithMCPConversationID(context.Background(), projectConv.ID), principal)
+
+	if err := authorize(unboundCtx, builtin.ToolWebshellExec, map[string]interface{}{"connection_id": wsProject.ID}); err == nil {
+		t.Fatal("unbound conversation was allowed to use project-bound webshell")
+	}
+	if err := authorize(unboundCtx, builtin.ToolWebshellExec, map[string]interface{}{"connection_id": wsUnbound.ID}); err != nil {
+		t.Fatalf("unbound webshell denied in unbound conversation: %v", err)
+	}
+	if err := authorize(projectCtx, builtin.ToolWebshellExec, map[string]interface{}{"connection_id": wsProject.ID}); err != nil {
+		t.Fatalf("project webshell denied in project conversation: %v", err)
+	}
+	if err := authorize(projectCtxFromConversationOnly, builtin.ToolWebshellExec, map[string]interface{}{"connection_id": wsProject.ID}); err != nil {
+		t.Fatalf("project webshell denied when only conversation id is present: %v", err)
+	}
+	if err := authorize(projectCtx, builtin.ToolWebshellExec, map[string]interface{}{"connection_id": wsUnbound.ID}); err == nil {
+		t.Fatal("project conversation was allowed to use unbound webshell by id")
+	}
+	if err := authorize(unboundCtx, builtin.ToolC2Session, map[string]interface{}{"action": "get", "session_id": session.ID}); err == nil {
+		t.Fatal("unbound conversation was allowed to use project-bound c2 session")
+	}
+	if err := authorize(projectCtx, builtin.ToolC2Session, map[string]interface{}{"action": "get", "session_id": session.ID}); err != nil {
+		t.Fatalf("project c2 session denied in project conversation: %v", err)
+	}
+	if err := authorize(projectCtxFromConversationOnly, builtin.ToolC2Session, map[string]interface{}{"action": "get", "session_id": session.ID}); err != nil {
+		t.Fatalf("project c2 session denied when only conversation id is present: %v", err)
+	}
+}
+
 func TestEveryBuiltinMCPToolHasExplicitAuthorizationPolicy(t *testing.T) {
 	db, err := database.NewDB(filepath.Join(t.TempDir(), "mcp-policy-inventory.db"), zap.NewNop())
 	if err != nil {

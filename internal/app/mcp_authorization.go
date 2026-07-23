@@ -32,6 +32,9 @@ func mcpToolAuthorizer(db *database.DB) func(context.Context, string, map[string
 			if id == "" || db == nil || !db.UserCanAccessResource(principal.UserID, principal.ScopeFor(permission), resourceType, id) {
 				return fmt.Errorf("no access to %s %s", resourceType, id)
 			}
+			if err := authorizeMCPProjectResourceBoundary(ctx, db, resourceType, id); err != nil {
+				return err
+			}
 			return nil
 		}
 		toolExecutionResource := func(permission string) error {
@@ -141,19 +144,25 @@ func mcpToolAuthorizer(db *database.DB) func(context.Context, string, map[string
 			builtin.ToolBatchTaskScheduleEnabled, builtin.ToolBatchTaskAdd, builtin.ToolBatchTaskUpdate:
 			return resource("tasks:write", "batch_task", "queue_id")
 		case builtin.ToolC2Listener:
-			return authorizeC2Action(principal, db, args, "c2_listener", "listener_id")
+			return authorizeC2Action(ctx, principal, db, args, "c2_listener", "listener_id")
 		case builtin.ToolC2Session, builtin.ToolC2Task, builtin.ToolC2File:
 			if toolName == builtin.ToolC2File && mcpAuthorizationString(args, "action") == "get_result" {
-				return authorizeC2Action(principal, db, args, "c2_task", "task_id")
+				return authorizeC2Action(ctx, principal, db, args, "c2_task", "task_id")
 			}
-			return authorizeC2Action(principal, db, args, "c2_session", "session_id")
+			return authorizeC2Action(ctx, principal, db, args, "c2_session", "session_id")
 		case builtin.ToolC2TaskManage:
-			return authorizeC2Action(principal, db, args, "c2_task", "task_id")
+			return authorizeC2Action(ctx, principal, db, args, "c2_task", "task_id")
 		case builtin.ToolC2Payload:
 			return resource("c2:write", "c2_listener", "listener_id")
 		case builtin.ToolC2Event:
 			if id := mcpAuthorizationString(args, "session_id"); id != "" {
 				return resource("c2:read", "c2_session", "session_id")
+			}
+			if id := mcpAuthorizationString(args, "task_id"); id != "" {
+				return resource("c2:read", "c2_task", "task_id")
+			}
+			if filter := mcpEffectiveProjectFilter(ctx, db); filter != "" {
+				return require("c2:read")
 			}
 			if principal.ScopeFor("c2:read") != database.RBACScopeAll {
 				return fmt.Errorf("unfiltered C2 event list requires global scope")
@@ -207,7 +216,7 @@ func externalMCPToolAuthorizer() func(context.Context, string, map[string]interf
 	}
 }
 
-func authorizeC2Action(principal authctx.Principal, db *database.DB, args map[string]interface{}, resourceType, argument string) error {
+func authorizeC2Action(ctx context.Context, principal authctx.Principal, db *database.DB, args map[string]interface{}, resourceType, argument string) error {
 	action := mcpAuthorizationString(args, "action")
 	permission := "c2:write"
 	if action == "list" || action == "get" || action == "get_result" || action == "wait" {
@@ -228,6 +237,9 @@ func authorizeC2Action(principal authctx.Principal, db *database.DB, args map[st
 			if db == nil || !db.UserCanAccessResource(principal.UserID, principal.ScopeFor(permission), resourceType, candidate) {
 				return fmt.Errorf("no access to %s %s", resourceType, candidate)
 			}
+			if err := authorizeMCPProjectResourceBoundary(ctx, db, resourceType, candidate); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
@@ -240,7 +252,91 @@ func authorizeC2Action(principal authctx.Principal, db *database.DB, args map[st
 	if db == nil || !db.UserCanAccessResource(principal.UserID, principal.ScopeFor(permission), resourceType, id) {
 		return fmt.Errorf("no access to %s %s", resourceType, id)
 	}
+	if err := authorizeMCPProjectResourceBoundary(ctx, db, resourceType, id); err != nil {
+		return err
+	}
 	return nil
+}
+
+func authorizeMCPProjectResourceBoundary(ctx context.Context, db *database.DB, resourceType, resourceID string) error {
+	filter := mcpEffectiveProjectFilter(ctx, db)
+	if filter == "" || db == nil {
+		return nil
+	}
+	projectID, ok, err := mcpResourceProjectID(db, resourceType, resourceID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil
+	}
+	if filter == database.ProjectFilterUnbound {
+		if projectID != "" {
+			return fmt.Errorf("resource %s %s belongs to project %s, current conversation is unbound", resourceType, resourceID, projectID)
+		}
+		return nil
+	}
+	if projectID != filter {
+		if projectID == "" {
+			return fmt.Errorf("resource %s %s is unbound, current conversation project is %s", resourceType, resourceID, filter)
+		}
+		return fmt.Errorf("resource %s %s belongs to project %s, current conversation project is %s", resourceType, resourceID, projectID, filter)
+	}
+	return nil
+}
+
+func mcpResourceProjectID(db *database.DB, resourceType, resourceID string) (string, bool, error) {
+	switch resourceType {
+	case "webshell":
+		conn, err := db.GetWebshellConnection(resourceID)
+		if err != nil {
+			return "", true, err
+		}
+		if conn == nil {
+			return "", true, fmt.Errorf("webshell not found")
+		}
+		return strings.TrimSpace(conn.ProjectID), true, nil
+	case "c2_listener":
+		listener, err := db.GetC2Listener(resourceID)
+		if err != nil {
+			return "", true, err
+		}
+		if listener == nil {
+			return "", true, fmt.Errorf("listener not found")
+		}
+		return strings.TrimSpace(listener.ProjectID), true, nil
+	case "c2_session":
+		session, err := db.GetC2Session(resourceID)
+		if err != nil {
+			return "", true, err
+		}
+		if session == nil {
+			return "", true, fmt.Errorf("session not found")
+		}
+		return mcpResourceProjectID(db, "c2_listener", session.ListenerID)
+	case "c2_task":
+		task, err := db.GetC2Task(resourceID)
+		if err != nil {
+			return "", true, err
+		}
+		if task == nil {
+			return "", true, fmt.Errorf("task not found")
+		}
+		return mcpResourceProjectIDFromC2Session(db, task.SessionID)
+	default:
+		return "", false, nil
+	}
+}
+
+func mcpResourceProjectIDFromC2Session(db *database.DB, sessionID string) (string, bool, error) {
+	session, err := db.GetC2Session(sessionID)
+	if err != nil {
+		return "", true, err
+	}
+	if session == nil {
+		return "", true, fmt.Errorf("session not found")
+	}
+	return mcpResourceProjectID(db, "c2_listener", session.ListenerID)
 }
 
 func mcpAuthorizationStrings(args map[string]interface{}, key string) []string {

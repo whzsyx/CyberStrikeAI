@@ -263,13 +263,19 @@ func (db *DB) UpdateProject(p *Project) error {
 	return nil
 }
 
-// DeleteProject 删除项目（级联删除事实；对话 project_id 置空由 FK 处理；漏洞 project_id 置空）。
+// DeleteProject 删除项目（级联删除事实；对话 project_id 置空由 FK 处理；其他资源 project_id 置空）。
 func (db *DB) DeleteProject(id string) error {
 	if _, err := db.Exec(`UPDATE vulnerabilities SET project_id = NULL WHERE project_id = ?`, id); err != nil {
 		return fmt.Errorf("解除漏洞项目关联失败: %w", err)
 	}
 	if _, err := db.Exec(`UPDATE assets SET project_id = NULL WHERE project_id = ?`, id); err != nil {
 		return fmt.Errorf("解除资产项目关联失败: %w", err)
+	}
+	if _, err := db.Exec(`UPDATE webshell_connections SET project_id = NULL WHERE project_id = ?`, id); err != nil {
+		return fmt.Errorf("解除 WebShell 项目关联失败: %w", err)
+	}
+	if _, err := db.Exec(`UPDATE c2_listeners SET project_id = NULL WHERE project_id = ?`, id); err != nil {
+		return fmt.Errorf("解除 C2 监听器项目关联失败: %w", err)
 	}
 	_, err := db.Exec(`DELETE FROM projects WHERE id = ?`, id)
 	if err != nil {
