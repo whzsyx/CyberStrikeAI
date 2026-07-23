@@ -38,6 +38,16 @@ function closeSettingsCustomSelect(select) {
     if (reg) {
         reg.wrapper.classList.remove('open');
         reg.trigger.setAttribute('aria-expanded', 'false');
+        if (reg.menu.parentNode !== reg.wrapper) {
+            reg.wrapper.appendChild(reg.menu);
+        }
+        reg.menu.classList.remove('settings-custom-select-menu--floating');
+        reg.menu.style.left = '';
+        reg.menu.style.right = '';
+        reg.menu.style.top = '';
+        reg.menu.style.bottom = '';
+        reg.menu.style.width = '';
+        reg.menu.style.maxHeight = '';
     }
 }
 
@@ -45,7 +55,60 @@ function closeAllSettingsCustomSelects() {
     settingsCustomSelects.forEach((reg) => {
         reg.wrapper.classList.remove('open');
         reg.trigger.setAttribute('aria-expanded', 'false');
+        if (reg.menu.parentNode !== reg.wrapper) {
+            reg.wrapper.appendChild(reg.menu);
+        }
+        reg.menu.classList.remove('settings-custom-select-menu--floating');
+        reg.menu.style.left = '';
+        reg.menu.style.right = '';
+        reg.menu.style.top = '';
+        reg.menu.style.bottom = '';
+        reg.menu.style.width = '';
+        reg.menu.style.maxHeight = '';
     });
+}
+
+function positionSettingsCustomSelectMenu(reg) {
+    if (!reg || !reg.wrapper.classList.contains('open')) return;
+    const rect = reg.trigger.getBoundingClientRect();
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    const gap = 6;
+    const edgePadding = 12;
+    const desiredWidth = Math.max(rect.width, 150);
+    const width = Math.min(desiredWidth, Math.max(160, viewportWidth - edgePadding * 2));
+    const left = Math.min(Math.max(edgePadding, rect.left), Math.max(edgePadding, viewportWidth - width - edgePadding));
+    const spaceBelow = viewportHeight - rect.bottom - gap - edgePadding;
+    const spaceAbove = rect.top - gap - edgePadding;
+    const openAbove = spaceBelow < 180 && spaceAbove > spaceBelow;
+    const maxHeight = Math.max(120, Math.floor((openAbove ? spaceAbove : spaceBelow) || 180));
+
+    reg.menu.style.left = `${Math.round(left)}px`;
+    reg.menu.style.right = 'auto';
+    reg.menu.style.width = `${Math.round(width)}px`;
+    reg.menu.style.maxHeight = `${maxHeight}px`;
+    if (openAbove) {
+        reg.menu.style.top = 'auto';
+        reg.menu.style.bottom = `${Math.round(viewportHeight - rect.top + gap)}px`;
+    } else {
+        reg.menu.style.top = `${Math.round(rect.bottom + gap)}px`;
+        reg.menu.style.bottom = 'auto';
+    }
+}
+
+function openSettingsCustomSelect(select) {
+    const reg = settingsCustomSelects.get(select);
+    if (!reg || select.disabled) return;
+    closeAllSettingsCustomSelects();
+    reg.wrapper.classList.add('open');
+    reg.trigger.setAttribute('aria-expanded', 'true');
+    reg.menu.classList.add('settings-custom-select-menu--floating');
+    document.body.appendChild(reg.menu);
+    positionSettingsCustomSelectMenu(reg);
+}
+
+function repositionOpenSettingsCustomSelects() {
+    settingsCustomSelects.forEach((reg) => positionSettingsCustomSelectMenu(reg));
 }
 
 function syncSettingsCustomSelect(select) {
@@ -139,9 +202,8 @@ function enhanceSettingsSelect(select) {
         event.stopPropagation();
         if (select.disabled) return;
         const willOpen = !wrapper.classList.contains('open');
-        closeAllSettingsCustomSelects();
-        wrapper.classList.toggle('open', willOpen);
-        trigger.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        if (willOpen) openSettingsCustomSelect(select);
+        else closeSettingsCustomSelect(select);
     });
 
     trigger.addEventListener('keydown', (event) => {
@@ -158,8 +220,7 @@ function enhanceSettingsSelect(select) {
             closeSettingsCustomSelect(select);
             return;
         } else if (event.key === 'Enter' || event.key === ' ') {
-            wrapper.classList.add('open');
-            trigger.setAttribute('aria-expanded', 'true');
+            openSettingsCustomSelect(select);
             event.preventDefault();
             return;
         } else {
@@ -200,6 +261,8 @@ function initSettingsCustomSelects(root) {
         document.addEventListener('keydown', (event) => {
             if (event.key === 'Escape') closeAllSettingsCustomSelects();
         });
+        document.addEventListener('scroll', repositionOpenSettingsCustomSelects, true);
+        window.addEventListener('resize', repositionOpenSettingsCustomSelects);
         settingsCustomSelectsDocBound = true;
     }
     refreshSettingsCustomSelects();

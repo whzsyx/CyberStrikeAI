@@ -9860,6 +9860,12 @@ html[data-theme="dark"] .robot-binding-service-hint-icon {
     display: block;
 }
 
+.settings-custom-select-menu--floating {
+    display: block;
+    position: fixed;
+    z-index: 10050;
+}
+
 .settings-custom-select-option {
     display: flex;
     align-items: center;
