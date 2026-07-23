@@ -218,16 +218,23 @@ The `run.sh` script will automatically:
 **Networking defaults:** `run.sh` starts the server with **`--https`** and the repo **`config.yaml`** (local self-signed TLS; better for many concurrent streams). Use **`./run.sh --http`** for plain HTTP. In production, set **`server.tls_cert_path`** / **`server.tls_key_path`** in **`config.yaml`** (see comments there). For manual runs, add **`--https`** or **`CYBERSTRIKE_HTTPS=1`**; if **`-config`** is wrong, the binary prints a short usage hint on stderr.
 
 **First-Time Configuration:**
-1. **Configure OpenAI-compatible API** (required before first use)
+1. **Configure AI channels** (required before first use)
    - After launch, open **`https://127.0.0.1:8080/`** (or **`https://localhost:8080/`**; replace **8080** with `server.port` in `config.yaml`) and accept the self-signed certificate warning once. If you used `./run.sh --http`, use **`http://`** instead.
-   - Go to `Settings` → Fill in your API credentials:
+   - Go to `System Settings` → `Basic Settings` → `AI Channel Configuration`, add or edit a channel, then fill in provider, Base URL, API key, model, and token limits. Click **Save changes**. The left channel list supports setting a default, copy, delete, and bulk probe.
      ```yaml
-     openai:
-       api_key: "${OPENAI_API_KEY}"
-       base_url: "https://api.openai.com/v1"  # or https://api.deepseek.com/v1
-       model: "gpt-4o"  # or deepseek-chat, claude-3-opus, etc.
+     ai:
+       default_channel: openai-main
+       channels:
+         openai-main:
+           name: OpenAI Main
+           provider: openai_compatible
+           api_key: "${OPENAI_API_KEY}"
+           base_url: "https://api.openai.com/v1"  # or https://api.deepseek.com/v1
+           model: "gpt-4o"  # or deepseek-chat, qwen3-max, etc.
+           max_total_tokens: 120000
+           max_completion_tokens: 16384
      ```
-   - Or edit `config.yaml` directly before launching
+   - Or edit `config.yaml` directly before launching. `ai.default_channel` is used for new conversations and tasks that do not explicitly select a channel; the chat page can also select any saved channel per session.
 2. **Login** - On first startup the console prints an auto-generated initial `admin` password; create accounts from **Platform permissions → User management**
 3. **Install security tools (optional)** - Install tools from `tools/` as needed; missing tools are skipped or substituted at runtime. Common examples:
 
@@ -281,19 +288,23 @@ Requirements / tips:
 
 ## Configuration
 
-Use [`config.example.yaml`](config.example.yaml) as the authoritative configuration template and copy only the values required for your environment. At minimum, configure the server and an OpenAI-compatible model provider:
+Use [`config.example.yaml`](config.example.yaml) as the authoritative configuration template and copy only the values required for your environment. At minimum, configure the server and one AI channel:
 
 ```yaml
 server:
   host: "127.0.0.1"
   port: 8080
-openai:
-  api_key: "${OPENAI_API_KEY}"
-  base_url: "https://api.openai.com/v1"
-  model: "your-model"
+ai:
+  default_channel: openai-main
+  channels:
+    openai-main:
+      provider: openai_compatible
+      api_key: "${OPENAI_API_KEY}"
+      base_url: "https://api.openai.com/v1"
+      model: "your-model"
 ```
 
-Do not commit real credentials. Review the [configuration reference](docs/en-US/configuration.md), [recommended profiles](docs/en-US/configuration-profiles.md), and [security hardening guide](docs/en-US/security-hardening.md) before exposing the service beyond localhost.
+`openai` is a backward-compatible runtime field; maintain new model settings in `ai.channels`. Do not commit real credentials. Review the [configuration reference](docs/en-US/configuration.md), [recommended profiles](docs/en-US/configuration-profiles.md), and [security hardening guide](docs/en-US/security-hardening.md) before exposing the service beyond localhost.
 
 ## Related documentation
 

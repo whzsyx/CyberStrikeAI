@@ -23,12 +23,12 @@ hitl:
     provider: ""
     base_url: ""
     api_key: ""
-    model: "" # set a small model here; blank reuses openai.model
+    model: "" # set a small model here; blank reuses the default AI channel model
   retention_days: 90
   tool_whitelist: [read_file, list_dir, glob, grep, tool_search]
 ```
 
-`audit_model` supports partial configuration. Empty fields inherit from the main `openai` config, so the common setup is to fill only `model` and run approvals on a cheaper small model.
+`audit_model` supports partial configuration. Empty fields inherit from the resolved default AI channel, so the common setup is to fill only `model` and run approvals on a cheaper small model.
 
 ## Recommended Approval Strategy
 

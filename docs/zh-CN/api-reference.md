@@ -52,6 +52,18 @@ Content-Type: application/json
 - `plan_execute`
 - `supervisor`
 
+常用请求体字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `message` | 用户消息，必填。 |
+| `conversationId` | 继续已有对话；为空时创建新对话。 |
+| `projectId` | 新对话绑定项目；为空时可跟随 `config.project.default_project_id`。 |
+| `role` | 使用指定角色。 |
+| `aiChannelId` | 选择 `ai.channels` 中的通道 ID；为空时使用 `ai.default_channel`。 |
+| `reasoning` | 会话级推理覆盖，受通道 `reasoning.allow_client_reasoning` 控制。 |
+| `hitl` | 会话级人机协同配置。 |
+
 对话管理：
 
 - `POST /api/conversations`

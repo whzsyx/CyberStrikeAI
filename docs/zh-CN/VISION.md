@@ -12,9 +12,9 @@
 vision:
   enabled: true
   model: qwen-vl-max   # 必填
-  api_key:             # 留空 → openai.api_key
-  base_url:            # 留空 → openai.base_url
-  provider:            # 留空 → openai.provider
+  api_key:             # 留空 → 默认 AI 通道 api_key
+  base_url:            # 留空 → 默认 AI 通道 base_url
+  provider:            # 留空 → 默认 AI 通道 provider
   max_image_bytes: 5242880
   max_dimension: 2048
   jpeg_quality: 82
@@ -28,7 +28,7 @@ vision:
 
 ## Web 设置
 
-**系统设置 → 基本设置 → 视觉分析（analyze_image）** 可配置启用开关、视觉模型、API Key/Base URL（留空复用 OpenAI）、预处理参数；**保存并应用** 后写入 `config.yaml` 并重新注册 MCP 工具。
+**系统设置 → 基本设置 → 视觉分析（analyze_image）** 可配置启用开关、视觉模型、API Key/Base URL（留空复用默认 AI 通道）、预处理参数；**保存并应用** 后写入 `config.yaml` 并重新注册 MCP 工具。
 
 ## 路径
 

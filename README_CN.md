@@ -217,16 +217,23 @@ chmod +x run.sh && ./run.sh
 **网络默认：** `run.sh` 会以 **`--https`** 并传入项目根 **`config.yaml`** 启动（本机自签证书，多路流式场景更稳）。只要明文 HTTP 用 **`./run.sh --http`**。生产环境在 **`config.yaml`** 的 **`server.tls_cert_path` / `server.tls_key_path`** 配正式证书（见文件内注释）。手动启动可加 **`--https`** 或环境变量 **`CYBERSTRIKE_HTTPS=1`**；`-config` 写错时程序会在终端提示正确写法。
 
 **首次配置：**
-1. **配置 AI 模型 API**（首次使用前必填）
+1. **配置 AI 通道**（首次使用前必填）
    - 启动后在浏览器打开 **`https://127.0.0.1:8080/`**（或 **`https://localhost:8080/`**；端口以 `config.yaml` 中 **`server.port`** 为准，默认 8080），并按提示信任自签证书。若使用 **`./run.sh --http`**，则改用 **`http://`** 访问。
-   - 进入 `设置` → 填写 API 配置信息：
+   - 进入 `系统设置` → `基本设置` → `AI 通道配置`，新增或编辑通道，填写 API 提供商、Base URL、API Key、模型和 Token 上限，点击 **保存更改**。左侧通道列表支持设为默认、复制、删除和批量探活。
      ```yaml
-     openai:
-       api_key: "${OPENAI_API_KEY}"
-       base_url: "https://api.openai.com/v1"  # 或 https://api.deepseek.com/v1
-       model: "gpt-4o"  # 或 deepseek-chat, claude-3-opus 等
+     ai:
+       default_channel: openai-main
+       channels:
+         openai-main:
+           name: OpenAI Main
+           provider: openai_compatible
+           api_key: "${OPENAI_API_KEY}"
+           base_url: "https://api.openai.com/v1"  # 或 https://api.deepseek.com/v1
+           model: "gpt-4o"  # 或 deepseek-chat, qwen3-max 等
+           max_total_tokens: 120000
+           max_completion_tokens: 16384
      ```
-   - 或启动前直接编辑 `config.yaml` 文件
+   - 或启动前直接编辑 `config.yaml` 文件。`ai.default_channel` 会作为新对话和未显式选择通道任务的默认模型；对话页也可以在会话设置里选择某个已保存通道。
 2. **登录系统** - 首次启动时控制台会显示自动生成的 `admin` 初始密码；也可在「平台权限 → 用户管理」中创建账号
 3. **安装安全工具（可选）** - 按需安装 `tools/` 目录中的工具；未安装的工具在执行时会自动跳过或改用替代方案。常用示例：
 
@@ -279,19 +286,23 @@ go build -o cyberstrike-ai cmd/server/main.go
 
 ## 配置
 
-请以 [`config.example.yaml`](config.example.yaml) 作为权威配置模板，只复制当前环境需要的配置。最少需要配置服务监听地址和一个 OpenAI 兼容模型：
+请以 [`config.example.yaml`](config.example.yaml) 作为权威配置模板，只复制当前环境需要的配置。最少需要配置服务监听地址和一个 AI 通道：
 
 ```yaml
 server:
   host: "127.0.0.1"
   port: 8080
-openai:
-  api_key: "${OPENAI_API_KEY}"
-  base_url: "https://api.openai.com/v1"
-  model: "your-model"
+ai:
+  default_channel: openai-main
+  channels:
+    openai-main:
+      provider: openai_compatible
+      api_key: "${OPENAI_API_KEY}"
+      base_url: "https://api.openai.com/v1"
+      model: "your-model"
 ```
 
-不要提交真实凭证。将服务暴露到 localhost 之外前，请阅读[配置参考](docs/zh-CN/configuration.md)、[推荐配置画像](docs/zh-CN/configuration-profiles.md)和[安全加固指南](docs/zh-CN/security-hardening.md)。
+`openai` 是兼容旧版本的运行时字段，新配置优先维护 `ai.channels`。不要提交真实凭证。将服务暴露到 localhost 之外前，请阅读[配置参考](docs/zh-CN/configuration.md)、[推荐配置画像](docs/zh-CN/configuration-profiles.md)和[安全加固指南](docs/zh-CN/security-hardening.md)。
 
 ## 相关文档
 

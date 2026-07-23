@@ -56,10 +56,11 @@ Output `1` means that the row was updated. The command requires `sqlite3` and `h
 
 Model fails:
 
-- wrong `base_url` path;
+- selected AI channel does not exist; empty selection follows `ai.default_channel`;
+- wrong `ai.channels.<id>.base_url` path;
 - invalid API key;
 - model unavailable;
-- reasoning fields unsupported by gateway. Try `openai.reasoning.mode: off`.
+- reasoning fields unsupported by gateway. Try `ai.channels.<id>.reasoning.mode: off`.
 
 Streaming stalls:
 

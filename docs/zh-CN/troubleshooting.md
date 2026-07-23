@@ -44,17 +44,20 @@ HASH=$(htpasswd -nBC 10 '' | cut -d: -f2 | tr -d '\n') && sqlite3 data/conversat
 
 检查：
 
-- `openai.base_url` 是否包含正确路径，如 `/v1`。
-- `openai.api_key` 是否有效。
-- `openai.model` 是否存在。
-- 服务商是否支持当前 `reasoning` 字段。
+- 当前对话选择的 AI 通道是否存在；为空时会使用 `ai.default_channel`。
+- `ai.channels.<id>.base_url` 是否包含正确路径，如 `/v1`。
+- `ai.channels.<id>.api_key` 是否有效。
+- `ai.channels.<id>.model` 是否存在。
+- 服务商是否支持当前通道的 `reasoning` 字段。
 
 可在系统设置中使用模型测试。若网关报 400，先尝试：
 
 ```yaml
-openai:
-  reasoning:
-    mode: off
+ai:
+  channels:
+    your-channel:
+      reasoning:
+        mode: off
 ```
 
 ## 流式输出中断

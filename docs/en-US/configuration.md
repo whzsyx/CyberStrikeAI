@@ -16,11 +16,15 @@ server:
   #   - https://trusted-integration.example
 auth:
   session_duration_hours: 12
-openai:
-  provider: openai
-  base_url: https://api.openai.com/v1
-  api_key: sk-...
-  model: gpt-4.1
+ai:
+  default_channel: openai-main
+  channels:
+    openai-main:
+      name: OpenAI Main
+      provider: openai_compatible
+      base_url: https://api.openai.com/v1
+      api_key: sk-...
+      model: gpt-4.1
 agent:
   max_iterations: 12000
   tool_timeout_minutes: 60
@@ -30,13 +34,64 @@ Change the initial `admin` password from the Web UI after first login. Use HTTPS
 
 Valid Chromium `chrome-extension://<32-character-extension-id>` origins are recognized automatically. The extension must still obtain host permission and authenticate with a password and Bearer token. `server.cors_allowed_origins` remains available as an exact allowlist for other trusted Web integrations; wildcards are not accepted, and changing it requires a restart.
 
+## AI Channels
+
+`ai` is the recommended model configuration entry. In the Web UI, use **System Settings → Basic Settings → AI Channel Configuration**. Saving that form writes `ai.default_channel` and `ai.channels`. The legacy `openai` field remains as a backward-compatible runtime field; on load, CyberStrikeAI ensures a default channel exists and synchronizes the resolved `ai.default_channel` into runtime `openai`.
+
+```yaml
+ai:
+  default_channel: openai-main
+  channels:
+    openai-main:
+      name: OpenAI Main
+      provider: openai_compatible
+      base_url: https://api.openai.com/v1
+      api_key: sk-...
+      model: gpt-4.1
+      max_total_tokens: 120000
+      max_completion_tokens: 16384
+      reasoning:
+        mode: on
+        effort: high
+        allow_client_reasoning: true
+        profile: openai_compat
+    claude-main:
+      name: Claude Main
+      provider: claude
+      base_url: https://api.anthropic.com/v1
+      api_key: sk-ant-...
+      model: claude-sonnet-4-5
+```
+
+| Field | Meaning |
+| --- | --- |
+| `ai.default_channel` | Default channel ID for new conversations and requests without an explicit channel. |
+| `ai.channels.<id>` | Channel config. IDs are normalized to lowercase letters, digits, and hyphens. |
+| `name` | Display name in the Web UI; falls back to the ID. |
+| `provider` | `openai_compatible` or `claude`. OpenAI-compatible channels map to runtime `openai`; Claude channels bridge to Anthropic Messages API. |
+| `base_url/api_key/model` | Required. Base URL usually includes a version path such as `/v1`. |
+| `max_total_tokens` | Shared context budget for compression, attack-chain generation, multi-agent summaries, and similar paths. |
+| `max_completion_tokens` | Per-response output cap; default is used when empty. |
+| `reasoning` | Default reasoning fields for the channel. Gateway support varies; try `mode: off` first when a provider rejects requests. |
+
+The chat page reads saved channels into the “AI Channel” selector. A non-empty request `aiChannelId` selects a channel for that run/session without sending API credentials through the prompt path. Empty `aiChannelId` follows `ai.default_channel`.
+
+Common Web UI operations:
+
+- Add: click `+`, fill required fields, then save.
+- Set default: select a channel, click **Set as default**, then save/apply.
+- Copy: duplicate the current form, useful for the same provider with a different model.
+- Delete: keep at least one channel; the default channel is protected from bulk delete.
+- Probe: use **Test connection** or **Bulk probe** to validate API key, Base URL, and model.
+
 ## Hot-Apply Boundaries
 
 `POST /api/config/apply` coordinates model config, tool description mode, MCP tool registration, knowledge components, robot restarts, and C2 runtime reconciliation. It does not make every field instantly effective.
 
 | Section | Usually hot-applies | Extra action |
 | --- | --- | --- |
-| `openai` | new requests use new model settings | running streams keep their current state |
+| `ai.default_channel` / `ai.channels` | new requests use the resolved default or selected channel | running streams keep their current state; reload config for the frontend channel list |
+| `openai` | compatibility field, usually synchronized from the default AI channel | prefer maintaining new config in `ai.channels` |
 | `agent.max_iterations` | new tasks | existing tasks continue |
 | `hitl.tool_whitelist` | new approval checks | pending approvals are not re-decided |
 | `knowledge.enabled` | initializes/updates components | scan and index are still required |
@@ -47,8 +102,8 @@ Valid Chromium `chrome-extension://<32-character-extension-id>` origins are reco
 
 ## Fallback Relationships
 
-- `vision.api_key/base_url/provider` can inherit from `openai`.
-- `hitl.audit_model` can inherit from `openai`.
+- `vision.api_key/base_url/provider` can inherit from the resolved default AI channel.
+- `hitl.audit_model` can inherit from the resolved default AI channel.
 - `knowledge.embedding.base_url/api_key` can inherit from model settings.
 - rerank config can inherit from embedding/openai.
 - `database.knowledge_db_path` can be separate or reuse the main DB.

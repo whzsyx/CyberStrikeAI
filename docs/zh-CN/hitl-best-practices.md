@@ -23,12 +23,12 @@ hitl:
     provider: ""
     base_url: ""
     api_key: ""
-    model: "" # 可填小模型；留空复用 openai.model
+    model: "" # 可填小模型；留空复用默认 AI 通道的模型
   retention_days: 90
   tool_whitelist: [read_file, list_dir, glob, grep, tool_search]
 ```
 
-`audit_model` 的字段可以只填一部分。空字段会自动继承主 `openai` 配置，因此常见做法是只填 `model`，让审计 Agent 使用更便宜的小模型。
+`audit_model` 的字段可以只填一部分。空字段会自动继承默认 AI 通道解析后的模型配置，因此常见做法是只填 `model`，让审计 Agent 使用更便宜的小模型。
 
 ## 推荐审批策略
 

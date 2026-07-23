@@ -45,6 +45,18 @@ Multi-agent:
 
 `orchestration` may be `deep`, `plan_execute`, or `supervisor`.
 
+Common request body fields:
+
+| Field | Meaning |
+| --- | --- |
+| `message` | User message, required. |
+| `conversationId` | Continue an existing conversation; empty creates a new one. |
+| `projectId` | Project for a new conversation; empty may follow `config.project.default_project_id`. |
+| `role` | Use a named role. |
+| `aiChannelId` | Select a channel from `ai.channels`; empty follows `ai.default_channel`. |
+| `reasoning` | Per-session reasoning override, controlled by the channel's `reasoning.allow_client_reasoning`. |
+| `hitl` | Per-session human-in-the-loop settings. |
+
 ## SSE Notes
 
 Streaming endpoints are long-lived. Clients should:

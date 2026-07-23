@@ -29,26 +29,57 @@ log:
 - `auth.session_duration_hours`：登录会话有效期（小时）。登录密码由 RBAC 用户管理，首次启动时在控制台输出 `admin` 初始密码。
 - `log.output`：可以是 `stdout`、`stderr` 或文件路径。
 
-## 模型配置
+## AI 通道与模型配置
 
 ```yaml
-openai:
-  provider: openai
-  base_url: https://api.openai.com/v1
-  api_key: sk-...
-  model: gpt-4.1
-  max_total_tokens: 120000
-  reasoning:
-    mode: on
-    effort: high
-    allow_client_reasoning: true
-    profile: openai_compat
+ai:
+  default_channel: openai-main
+  channels:
+    openai-main:
+      name: OpenAI Main
+      provider: openai_compatible
+      base_url: https://api.openai.com/v1
+      api_key: sk-...
+      model: gpt-4.1
+      max_total_tokens: 120000
+      max_completion_tokens: 16384
+      reasoning:
+        mode: on
+        effort: high
+        allow_client_reasoning: true
+        profile: openai_compat
+    claude-main:
+      name: Claude Main
+      provider: claude
+      base_url: https://api.anthropic.com/v1
+      api_key: sk-ant-...
+      model: claude-sonnet-4-5
 ```
 
-- `provider`：`openai` 表示 OpenAI 兼容接口；`claude` 会桥接到 Anthropic Claude Messages API。
-- `base_url/api_key/model`：主模型配置。
-- `max_total_tokens`：上下文压缩、攻击链构建、多代理摘要等共用的总预算。
-- `reasoning`：控制推理扩展字段。不同网关支持差异较大，异常时先尝试 `mode: off`。
+`ai` 是推荐的模型配置入口。系统设置页对应路径是 **系统设置 → 基本设置 → AI 通道配置**，保存后写入 `ai.default_channel` 和 `ai.channels`。旧版 `openai` 字段仍保留为兼容运行时字段；加载配置时会确保至少有一个默认通道，并把 `ai.default_channel` 解析后的配置同步到运行时 `openai`。
+
+通道字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `ai.default_channel` | 默认通道 ID。新对话、机器人、批量任务和未显式选择通道的请求使用它。 |
+| `ai.channels.<id>` | 通道配置。ID 会归一化为小写、数字和短横线，例如 `Qwen_Max` 会变成 `qwen-max`。 |
+| `name` | Web UI 展示名。留空时使用通道 ID。 |
+| `provider` | `openai_compatible` 或 `claude`。`openai_compatible` 会在运行时映射为 `openai`；`claude` 会桥接到 Anthropic Messages API。 |
+| `base_url/api_key/model` | 必填。Base URL 通常需要包含版本路径，如 OpenAI/兼容网关的 `/v1`。 |
+| `max_total_tokens` | 上下文压缩、攻击链构建、多代理摘要等共用的总预算。 |
+| `max_completion_tokens` | 单次模型输出上限；未填时使用默认值。 |
+| `reasoning` | 该通道的默认推理扩展字段。不同网关支持差异较大，异常时先尝试 `mode: off`。 |
+
+对话页的“AI 通道”下拉框会读取已保存通道。请求体中的 `aiChannelId` 非空时仅对本次/本会话运行配置生效，不会把 API Key 发送给模型；为空时跟随 `ai.default_channel`。
+
+常用操作：
+
+- 新增：点击左侧 `+`，填写必填字段后保存。
+- 设默认：选中通道后点击“设为默认”，保存并应用后新请求生效。
+- 复制：以当前表单内容创建副本，适合为同一服务商配置不同模型。
+- 删除：默认通道不能作为批量删除目标；删除后需保留至少一个通道。
+- 探活：单通道“测试连接”或左侧“批量探活”会调用模型测试接口，适合验证 Key、Base URL 和模型名。
 
 ## Agent
 
@@ -213,7 +244,8 @@ project:
 
 | 配置段 | 应用后通常立即生效 | 需要额外动作 |
 | --- | --- | --- |
-| `openai` | 新请求使用新模型配置 | 旧的流式请求不会被强制切换 |
+| `ai.default_channel` / `ai.channels` | 新请求使用解析后的默认或选定通道 | 旧的流式请求不会被强制切换；前端通道列表需要重新读取配置 |
+| `openai` | 兼容字段；通常由默认 AI 通道同步 | 新配置优先维护 `ai.channels` |
 | `agent.max_iterations` | 新 Agent 任务生效 | 已运行任务按启动时状态继续 |
 | `security.tool_description_mode` | 工具重新暴露时生效 | 模型已有上下文不会回滚 |
 | `hitl.tool_whitelist` | 新工具调用审批判断生效 | 已挂起审批不自动重判 |
@@ -228,7 +260,7 @@ project:
 几个字段有“留空复用”的关系：
 
 - `vision.api_key/base_url/provider` 留空时复用 `openai`。
-- `hitl.audit_model` 留空时复用 `openai`。
+- `hitl.audit_model` 留空时复用默认 AI 通道解析后的 `openai`。
 - `knowledge.embedding.base_url/api_key` 留空时复用主模型或 embedding 默认配置。
 - `knowledge.retrieval.rerank.base_url/api_key` 留空时复用 embedding/openai。
 - `database.knowledge_db_path` 留空时可以复用主会话数据库，但独立文件更利于备份。

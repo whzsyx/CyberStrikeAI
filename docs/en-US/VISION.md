@@ -21,7 +21,7 @@ vision:
   timeout_seconds: 60
 ```
 
-Empty `api_key`, `base_url`, or `provider` inherits from `openai`.
+Empty `api_key`, `base_url`, or `provider` inherits from the resolved default AI channel.
 
 ## Data Handling
 
