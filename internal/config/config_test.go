@@ -95,6 +95,48 @@ func TestHitlAuditModelEffectiveFallsBackToMainConfig(t *testing.T) {
 	}
 }
 
+func TestLoadUsesAIDefaultChannelAsRuntimeOpenAI(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	initial := strings.Join([]string{
+		"ai:",
+		"  default_channel: deepseek",
+		"  channels:",
+		"    qwen:",
+		"      name: Qwen",
+		"      provider: openai_compatible",
+		"      base_url: https://dashscope.example/v1",
+		"      api_key: qwen-key",
+		"      model: qwen-max",
+		"    deepseek:",
+		"      name: DeepSeek",
+		"      provider: openai_compatible",
+		"      base_url: https://deepseek.example/v1",
+		"      api_key: deepseek-key",
+		"      model: deepseek-chat",
+		"      max_total_tokens: 64000",
+		"server:",
+		"  host: 127.0.0.1",
+		"  port: 8080",
+		"",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(initial), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.OpenAI.Model != "deepseek-chat" || cfg.OpenAI.APIKey != "deepseek-key" || cfg.OpenAI.MaxTotalTokens != 64000 {
+		t.Fatalf("runtime OpenAI config did not follow ai.default_channel: %+v", cfg.OpenAI)
+	}
+	oa, id, ok := cfg.ResolveAIChannel("qwen")
+	if !ok || id != "qwen" || oa.Model != "qwen-max" || oa.APIKey != "qwen-key" {
+		t.Fatalf("ResolveAIChannel(qwen) = (%+v, %q, %v)", oa, id, ok)
+	}
+}
+
 func TestSummarizationUserIntentLedgerRunesEffective(t *testing.T) {
 	var zero MultiAgentEinoMiddlewareConfig
 	if got := zero.SummarizationUserIntentLedgerMaxRunesEffective(); got != DefaultSummarizationUserIntentLedgerMaxRunes {

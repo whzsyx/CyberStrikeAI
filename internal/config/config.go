@@ -21,7 +21,8 @@ type Config struct {
 	Server      ServerConfig          `yaml:"server"`
 	Log         LogConfig             `yaml:"log"`
 	MCP         MCPConfig             `yaml:"mcp"`
-	OpenAI      OpenAIConfig          `yaml:"openai"`
+	AI          AIConfig              `yaml:"ai,omitempty" json:"ai,omitempty"`
+	OpenAI      OpenAIConfig          `yaml:"openai,omitempty" json:"openai,omitempty"`
 	FOFA        FofaConfig            `yaml:"fofa,omitempty" json:"fofa,omitempty"`
 	ZoomEye     SpaceSearchConfig     `yaml:"zoomeye,omitempty" json:"zoomeye,omitempty"`
 	Quake       SpaceSearchConfig     `yaml:"quake,omitempty" json:"quake,omitempty"`
@@ -840,6 +841,130 @@ type OpenAIConfig struct {
 	Reasoning OpenAIReasoningConfig `yaml:"reasoning,omitempty" json:"reasoning,omitempty"`
 }
 
+// AIConfig stores first-class model channels. Runtime callers resolve a channel
+// into OpenAIConfig at the edge instead of moving API credentials through chat requests.
+type AIConfig struct {
+	DefaultChannel string                     `yaml:"default_channel,omitempty" json:"default_channel,omitempty"`
+	Channels       map[string]AIChannelConfig `yaml:"channels,omitempty" json:"channels,omitempty"`
+}
+
+type AIChannelConfig struct {
+	Name                string                `yaml:"name,omitempty" json:"name,omitempty"`
+	Provider            string                `yaml:"provider,omitempty" json:"provider,omitempty"`
+	APIKey              string                `yaml:"api_key" json:"api_key"`
+	BaseURL             string                `yaml:"base_url" json:"base_url"`
+	Model               string                `yaml:"model" json:"model"`
+	MaxTotalTokens      int                   `yaml:"max_total_tokens,omitempty" json:"max_total_tokens,omitempty"`
+	MaxCompletionTokens int                   `yaml:"max_completion_tokens,omitempty" json:"max_completion_tokens,omitempty"`
+	Reasoning           OpenAIReasoningConfig `yaml:"reasoning,omitempty" json:"reasoning,omitempty"`
+}
+
+func (c AIChannelConfig) ToOpenAIConfig() OpenAIConfig {
+	provider := strings.TrimSpace(c.Provider)
+	if provider == "" || provider == "openai_compatible" {
+		provider = "openai"
+	}
+	return OpenAIConfig{
+		Provider:            provider,
+		APIKey:              c.APIKey,
+		BaseURL:             c.BaseURL,
+		Model:               c.Model,
+		MaxTotalTokens:      c.MaxTotalTokens,
+		MaxCompletionTokens: c.MaxCompletionTokens,
+		Reasoning:           c.Reasoning,
+	}
+}
+
+func AIChannelFromOpenAI(id, name string, oa OpenAIConfig) AIChannelConfig {
+	if strings.TrimSpace(name) == "" {
+		name = id
+	}
+	return AIChannelConfig{
+		Name:                name,
+		Provider:            oa.Provider,
+		APIKey:              oa.APIKey,
+		BaseURL:             oa.BaseURL,
+		Model:               oa.Model,
+		MaxTotalTokens:      oa.MaxTotalTokens,
+		MaxCompletionTokens: oa.MaxCompletionTokens,
+		Reasoning:           oa.Reasoning,
+	}
+}
+
+func NormalizeAIChannelID(s string) string {
+	id := strings.ToLower(strings.TrimSpace(s))
+	id = strings.ReplaceAll(id, "_", "-")
+	var b strings.Builder
+	lastDash := false
+	for _, r := range id {
+		ok := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		if ok {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "default"
+	}
+	return out
+}
+
+func (c *AIConfig) EnsureDefaultFromOpenAI(openAI OpenAIConfig) {
+	if c.Channels == nil {
+		c.Channels = make(map[string]AIChannelConfig)
+	}
+	def := NormalizeAIChannelID(c.DefaultChannel)
+	if def == "default" && strings.TrimSpace(c.DefaultChannel) == "" {
+		def = "default"
+	}
+	c.DefaultChannel = def
+	if _, ok := c.Channels[def]; !ok {
+		c.Channels[def] = AIChannelFromOpenAI(def, "Default", openAI)
+	}
+}
+
+func (c AIConfig) ResolveChannel(channelID string) (OpenAIConfig, string, bool) {
+	id := NormalizeAIChannelID(channelID)
+	if strings.TrimSpace(channelID) == "" {
+		id = NormalizeAIChannelID(c.DefaultChannel)
+	}
+	if id == "" {
+		id = "default"
+	}
+	if c.Channels != nil {
+		if ch, ok := c.Channels[id]; ok {
+			return ch.ToOpenAIConfig(), id, true
+		}
+	}
+	return OpenAIConfig{}, id, false
+}
+
+func (c *Config) ResolveAIChannel(channelID string) (OpenAIConfig, string, bool) {
+	if c == nil {
+		return OpenAIConfig{}, "", false
+	}
+	if oa, id, ok := c.AI.ResolveChannel(channelID); ok {
+		return oa, id, true
+	}
+	return c.OpenAI, NormalizeAIChannelID(channelID), strings.TrimSpace(c.OpenAI.Model) != "" || strings.TrimSpace(c.OpenAI.BaseURL) != ""
+}
+
+func (c *Config) ApplyDefaultAIChannel() {
+	if c == nil {
+		return
+	}
+	c.AI.EnsureDefaultFromOpenAI(c.OpenAI)
+	if oa, _, ok := c.AI.ResolveChannel(c.AI.DefaultChannel); ok {
+		c.OpenAI = oa
+	}
+}
+
 func (c OpenAIConfig) MaxCompletionTokensEffective() int {
 	if c.MaxCompletionTokens > 0 {
 		return c.MaxCompletionTokens
@@ -1224,6 +1349,7 @@ func Load(path string) (*Config, error) {
 	if cfg.Audit.MaxDetailBytes <= 0 {
 		cfg.Audit.MaxDetailBytes = 8192
 	}
+	cfg.ApplyDefaultAIChannel()
 	if err := validateModelOutputLimits(cfg.OpenAI, cfg.MultiAgent.EinoMiddleware); err != nil {
 		return nil, err
 	}
@@ -1720,12 +1846,20 @@ func Default() *Config {
 			Host:    "127.0.0.1",
 			Port:    8081,
 		},
-		OpenAI: OpenAIConfig{
-			BaseURL:             "https://api.openai.com/v1",
-			Model:               "gpt-4",
-			MaxTotalTokens:      120000,
-			MaxCompletionTokens: DefaultMaxCompletionTokens,
+		AI: AIConfig{
+			DefaultChannel: "default",
+			Channels: map[string]AIChannelConfig{
+				"default": {
+					Name:                "Default",
+					Provider:            "openai_compatible",
+					BaseURL:             "https://api.openai.com/v1",
+					Model:               "gpt-4",
+					MaxTotalTokens:      120000,
+					MaxCompletionTokens: DefaultMaxCompletionTokens,
+				},
+			},
 		},
+		OpenAI: OpenAIConfig{},
 		Agent: AgentConfig{
 			MaxIterations:                      30,  // 默认最大迭代次数
 			ToolTimeoutMinutes:                 10,  // 单次工具执行默认最多 10 分钟，避免异常长时间占用
