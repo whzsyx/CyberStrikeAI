@@ -4,7 +4,9 @@ import (
 	"context"
 	"cyberstrike-ai/internal/app"
 	"cyberstrike-ai/internal/config"
+	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/logger"
+	"cyberstrike-ai/internal/security"
 	"cyberstrike-ai/internal/termout"
 	"flag"
 	"fmt"
@@ -12,17 +14,21 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+
+	"go.uber.org/zap"
+	"golang.org/x/term"
 )
 
 func main() {
-	var configPath = flag.String("config", "config.yaml", "配置文件路径")
-	var httpsBootstrap = flag.Bool("https", false, "启用主站 HTTPS：未配置 tls_cert_path/tls_key_path 时使用内存自签证书（本地测试）；与 run.sh 默认行为一致")
-	var httpBootstrap = flag.Bool("http", false, "强制主站使用明文 HTTP：覆盖配置文件中的 tls_enabled/tls_auto_self_sign/tls_cert_path/tls_key_path")
+	var configPath = flag.String("config", "config.yaml", "Path to the configuration file")
+	var httpsBootstrap = flag.Bool("https", false, "Enable HTTPS for the main site; uses an in-memory self-signed certificate when no cert/key is configured")
+	var httpBootstrap = flag.Bool("http", false, "Force plain HTTP for the main site, overriding TLS settings in the configuration file")
+	var resetAdminPassword = flag.Bool("reset-admin-password", false, "Interactively reset the built-in admin password and exit")
 	flag.Parse()
 
 	// 环境变量兼容（便于 systemd/docker 等不传参场景）
 	if *httpsBootstrap && *httpBootstrap {
-		fmt.Fprintln(os.Stderr, "--http 与 --https 不能同时使用")
+		fmt.Fprintln(os.Stderr, "--http and --https cannot be used together")
 		os.Exit(2)
 	}
 	if !*httpsBootstrap && !*httpBootstrap {
@@ -38,22 +44,30 @@ func main() {
 		cp = "config.yaml"
 	}
 	if strings.HasPrefix(cp, "-") {
-		fmt.Fprintf(os.Stderr, "无效的 -config 路径 %q。\n若同时需要 HTTPS，请写成: ./cyberstrike-ai --https -config config.yaml（-config 后必须是 yaml 文件路径）。\n", cp)
+		fmt.Fprintf(os.Stderr, "Invalid -config path %q.\nIf HTTPS is also needed, use: ./cyberstrike-ai --https -config config.yaml (-config must be followed by a yaml file path).\n", cp)
 		os.Exit(2)
 	}
 	localConfig, err := config.EnsureLocalConfig(cp)
 	if err != nil {
-		fmt.Printf("加载配置失败: %v\n", err)
+		fmt.Printf("Failed to load config: %v\n", err)
 		return
 	}
 
 	cfg, err := config.Load(cp)
 	if err != nil {
-		fmt.Printf("加载配置失败: %v\n", err)
+		fmt.Printf("Failed to load config: %v\n", err)
 		return
 	}
 	if localConfig.Created {
 		termout.PrintConfigCreated()
+	}
+
+	if *resetAdminPassword {
+		if err := runResetAdminPassword(cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to reset admin password: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	if *httpBootstrap {
@@ -79,7 +93,7 @@ func main() {
 
 	// MCP 启用且 auth_header_value 为空时，自动生成随机密钥并写回配置
 	if err := config.EnsureMCPAuth(cp, cfg); err != nil {
-		fmt.Printf("MCP 鉴权配置失败: %v\n", err)
+		fmt.Printf("Failed to configure MCP authentication: %v\n", err)
 		return
 	}
 	if cfg.MCP.Enabled {
@@ -120,4 +134,73 @@ func main() {
 			log.Fatal("服务器启动失败", "error", err)
 		}
 	}
+}
+
+func runResetAdminPassword(cfg *config.Config) error {
+	dbPath := strings.TrimSpace(cfg.Database.Path)
+	if dbPath == "" {
+		dbPath = "data/conversations.db"
+	}
+	if _, err := os.Stat(dbPath); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("database does not exist: %s; start the service once to initialize it first", dbPath)
+		}
+		return err
+	}
+
+	fmt.Println("Reset built-in admin password")
+	fmt.Println()
+
+	password, err := readHiddenPassword("New admin password: ")
+	if err != nil {
+		return err
+	}
+	password = strings.TrimSpace(password)
+	if len(password) < 8 {
+		return fmt.Errorf("new password must be at least 8 characters")
+	}
+	confirm, err := readHiddenPassword("Confirm new password: ")
+	if err != nil {
+		return err
+	}
+	if password != strings.TrimSpace(confirm) {
+		return fmt.Errorf("passwords do not match")
+	}
+
+	hash, err := security.HashPassword(password)
+	if err != nil {
+		return err
+	}
+
+	db, err := database.NewDB(dbPath, zap.NewNop())
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+
+	admin, err := db.GetRBACUserByUsername("admin")
+	if err != nil {
+		return fmt.Errorf("built-in admin account was not found; start the service once to initialize it first: %w", err)
+	}
+	if !admin.IsBuiltin {
+		return fmt.Errorf("admin account is not built in; refusing to reset it")
+	}
+	if err := db.UpdateRBACAdminPassword(hash); err != nil {
+		return err
+	}
+
+	fmt.Println()
+	fmt.Println("Admin password has been reset.")
+	fmt.Println("If the service is running, existing login sessions remain valid until the service restarts or the sessions expire.")
+	return nil
+}
+
+func readHiddenPassword(prompt string) (string, error) {
+	fmt.Fprint(os.Stderr, prompt)
+	password, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Fprintln(os.Stderr)
+	if err != nil {
+		return "", err
+	}
+	return string(password), nil
 }

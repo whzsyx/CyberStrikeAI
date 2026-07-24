@@ -32,13 +32,21 @@ https://127.0.0.1:8080/
 
 如果仍有其他具备 `rbac:write` 权限的管理员账号，优先在 **平台权限 → 用户管理** 中重置密码。
 
-如果没有可用的管理员会话，可在服务器上紧急重置内置 `admin` 账号。先停止 CyberStrikeAI 服务并备份数据库，然后在项目根目录执行以下命令，按提示输入并确认新密码：
+如果没有可用的管理员会话，可在服务器上紧急重置内置 `admin` 账号。在项目根目录执行：
+
+```bash
+./run.sh --reset-admin-password
+```
+
+按提示输入并确认新密码。脚本会隐藏输入并写入 bcrypt 哈希。如果服务正在运行，完成后重新启动服务，使原有登录会话失效。
+
+如果无法使用 `run.sh`，也可以手动执行以下命令，按提示输入并确认新密码：
 
 ```bash
 HASH=$(htpasswd -nBC 10 '' | cut -d: -f2 | tr -d '\n') && sqlite3 data/conversations.db "UPDATE rbac_users SET password_hash='$HASH', updated_at=CURRENT_TIMESTAMP WHERE id='admin' AND username='admin' AND is_builtin=1; SELECT changes();"
 ```
 
-输出 `1` 表示修改成功。该命令需要 `sqlite3` 和 `htpasswd`；如果 `config.yaml` 中的 `database.path` 不是默认值，请替换 `data/conversations.db`。密码输入不会显示，也不会写入 Shell 历史，并以 bcrypt 哈希保存。完成后重新启动服务，使原有登录会话失效。
+输出 `1` 表示修改成功。该命令需要 `sqlite3` 和 `htpasswd`；如果 `config.yaml` 中的 `database.path` 不是默认值，请替换 `data/conversations.db`。密码输入不会显示，也不会写入 Shell 历史。
 
 ## 模型无响应
 

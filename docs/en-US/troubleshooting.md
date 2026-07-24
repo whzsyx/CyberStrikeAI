@@ -46,13 +46,21 @@ Login fails:
 
 If another administrator with `rbac:write` is available, reset the password under **Platform permissions → User management**.
 
-If no administrator session is available, the built-in `admin` account can be recovered on the server. Stop CyberStrikeAI, back up the database, change to the project root, and run the command below. Enter and confirm the new password when prompted:
+If no administrator session is available, the built-in `admin` account can be recovered on the server. Change to the project root and run:
+
+```bash
+./run.sh --reset-admin-password
+```
+
+Enter and confirm the new password when prompted. The script hides input and stores a bcrypt hash. If the service is running, restart it afterward to invalidate existing login sessions.
+
+If `run.sh` is not available, run the command below manually. Enter and confirm the new password when prompted:
 
 ```bash
 HASH=$(htpasswd -nBC 10 '' | cut -d: -f2 | tr -d '\n') && sqlite3 data/conversations.db "UPDATE rbac_users SET password_hash='$HASH', updated_at=CURRENT_TIMESTAMP WHERE id='admin' AND username='admin' AND is_builtin=1; SELECT changes();"
 ```
 
-Output `1` means that the row was updated. The command requires `sqlite3` and `htpasswd`. If `database.path` in `config.yaml` is not the default, replace `data/conversations.db`. Password input is hidden, is not written to shell history, and is stored as a bcrypt hash. Restart the service afterward to invalidate existing login sessions.
+Output `1` means that the row was updated. The command requires `sqlite3` and `htpasswd`. If `database.path` in `config.yaml` is not the default, replace `data/conversations.db`. Password input is hidden and is not written to shell history.
 
 Model fails:
 
