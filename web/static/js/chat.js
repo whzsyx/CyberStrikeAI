@@ -3572,39 +3572,14 @@ function getCachedToolExecutionSummaries(messageElement) {
     }
 }
 
-/**
- * 过程摘要中的早期/快速工具结果可能没有 executionId，但消息本身会按调用顺序保存 ID。
- * 合并两份数据，避免渲染摘要时丢失可用的弹窗详情入口。
- */
-function mergeToolExecutionSummariesWithIds(summaries, executionIds) {
-    const normalizedSummaries = Array.isArray(summaries)
-        ? summaries.map(normalizeToolExecutionSummaryForButton)
-        : [];
-    const normalizedIds = normalizeMcpExecutionIds(executionIds);
-    const claimedIds = new Set(
-        normalizedSummaries.map((item) => item.executionId).filter(Boolean)
-    );
-    const fallbackIds = normalizedIds.filter((id) => !claimedIds.has(id));
-    let fallbackIndex = 0;
-    return normalizedSummaries.map((item) => {
-        if (item.executionId || fallbackIndex >= fallbackIds.length) return item;
-        return {
-            ...item,
-            executionId: fallbackIds[fallbackIndex++]
-        };
-    });
-}
-
 function selectToolExecutionSummariesForButtons(summaries, executionIds) {
     const normalizedSummaries = Array.isArray(summaries)
         ? summaries.map(normalizeToolExecutionSummaryForButton)
         : [];
     const normalizedIds = normalizeMcpExecutionIds(executionIds);
+    if (normalizedSummaries.length > 0) return normalizedSummaries;
     if (normalizedIds.length === 0) return normalizedSummaries;
-    if (normalizedSummaries.length === 0) {
-        return normalizedIds.map((executionId) => normalizeToolExecutionSummaryForButton({ executionId }));
-    }
-    return mergeToolExecutionSummariesWithIds(normalizedSummaries, normalizedIds);
+    return normalizedIds.map((executionId) => normalizeToolExecutionSummaryForButton({ executionId }));
 }
 
 function setPendingToolExecutionSummaries(messageElement, summaries) {
@@ -3819,10 +3794,6 @@ async function findToolExecutionTimelineItem(messageElement, summary, index) {
     if (!target && item.toolCallId) {
         target = timeline.querySelector('[data-tool-call-id="' + cssEscapeValue(item.toolCallId) + '"]');
     }
-    if (!target) {
-        const toolItems = timeline.querySelectorAll('.timeline-item-tool_call');
-        target = toolItems[index] || null;
-    }
     if (!target && item.processDetailId && messageElement.dataset && messageElement.dataset.backendMessageId && typeof window.loadProcessDetailsPaginated === 'function') {
         await window.loadProcessDetailsPaginated(messageElement.id, messageElement.dataset.backendMessageId, {
             autoLoadAll: false,
@@ -3995,11 +3966,7 @@ async function openTaskToolExecutionDetail(messageElement, item, index) {
     let detailItem = item;
     if (!detailItem.executionId) {
         const refreshedItem = await resolveToolExecutionSummaryForFocus(messageElement, '', index);
-        const mergedItems = mergeToolExecutionSummariesWithIds(
-            getCachedToolExecutionSummaries(messageElement),
-            getCachedMcpExecutionIds(messageElement)
-        );
-        detailItem = mergedItems[index] || refreshedItem || detailItem;
+        detailItem = refreshedItem || detailItem;
     }
     if (detailItem.executionId) {
         await showMCPDetail(detailItem.executionId);
