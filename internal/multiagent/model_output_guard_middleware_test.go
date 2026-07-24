@@ -50,6 +50,18 @@ func TestModelOutputGuardRejectsTruncatedToolCallBeforeExecution(t *testing.T) {
 	}
 }
 
+func TestModelOutputGuardAllowsValidToolCallDespiteLengthFinish(t *testing.T) {
+	original := `{"command":"echo ok"}`
+	state, err := runModelOutputGuard(t, []adk.Message{schema.UserMessage("run"), guardedAssistant(original, "length")}, config.MultiAgentEinoMiddlewareConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := state.Messages[len(state.Messages)-1].ToolCalls[0].Function.Arguments
+	if got != original {
+		t.Fatalf("valid arguments should pass unchanged: %q", got)
+	}
+}
+
 func TestModelOutputGuardRejectsInvalidJSONShapes(t *testing.T) {
 	for _, arguments := range []string{"", `[]`, `{"command":`} {
 		t.Run(arguments, func(t *testing.T) {

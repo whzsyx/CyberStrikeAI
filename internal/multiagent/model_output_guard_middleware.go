@@ -96,7 +96,17 @@ func (m *modelOutputGuardMiddleware) AfterModelRewriteState(
 	badIndex := -1
 	argumentBytes := 0
 	if strings.EqualFold(strings.TrimSpace(finishReason), "length") {
-		reason = "output_limit"
+		if len(last.ToolCalls) == 0 {
+			reason = "output_limit"
+		} else {
+			for i, tc := range last.ToolCalls {
+				r, n := validateGeneratedToolCall(tc, m.cfg)
+				if r != "" {
+					reason, badIndex, argumentBytes = "output_limit", i, n
+					break
+				}
+			}
+		}
 	} else {
 		for i, tc := range last.ToolCalls {
 			r, n := validateGeneratedToolCall(tc, m.cfg)
