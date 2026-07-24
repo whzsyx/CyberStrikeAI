@@ -2571,6 +2571,7 @@ function writeAIChannelToMainForm(id) {
     if (allowEl) allowEl.checked = r.allow_client_reasoning !== false;
     syncModelListFetchButtons();
     syncAIChannelEditorPreview();
+    syncConnectionTestResultForSelectedAIChannel();
 }
 
 function displayAIChannelName(id, ch) {
@@ -2618,8 +2619,10 @@ function updateAIChannelSelectOption(id) {
             delete opt.dataset.probeStatus;
             delete opt.dataset.probeMessage;
         }
-        select.value = channelId;
-        select.selectedIndex = opt.index;
+        if (channelId === selectedAIChannelId) {
+            select.value = channelId;
+            select.selectedIndex = opt.index;
+        }
     }
     if (typeof syncSettingsCustomSelect === 'function') {
         syncSettingsCustomSelect(select);
@@ -2630,12 +2633,18 @@ function syncSelectedAIChannelUI() {
     updateAIChannelSelectOption(selectedAIChannelId);
     updateAIChannelEditorChrome(selectedAIChannelId);
     renderAIChannelList();
+    syncConnectionTestResultForSelectedAIChannel();
 }
 
 function syncAIChannelEditorPreview() {
     if (!currentConfig?.ai?.channels || !selectedAIChannelId || !currentConfig.ai.channels[selectedAIChannelId]) return;
     const id = normalizeAIChannelId(selectedAIChannelId);
+    const prev = currentConfig.ai.channels[id] || {};
     const next = readAIChannelFromMainForm(id);
+    const connectionChanged = ['provider', 'base_url', 'api_key', 'model'].some((key) => String(prev[key] || '') !== String(next[key] || ''));
+    if (connectionChanged) {
+        delete aiChannelProbeResults[id];
+    }
     currentConfig.ai.channels[id] = next;
     syncSelectedAIChannelUI();
 }
@@ -2644,6 +2653,7 @@ function bindAIChannelEditorPreviewSync() {
     const ids = [
         'ai-channel-name',
         'openai-provider',
+        'openai-api-key',
         'openai-base-url',
         'openai-model'
     ];
@@ -2739,9 +2749,9 @@ function renderAIChannelList(ids) {
         const displayName = displayAIChannelName(id, ch);
         const defaultBadge = isDefault ? `<span class="ai-channel-badge">${escapeAIChannelHtml(settingsT('settingsBasic.aiChannelDefaultBadge', '默认'))}</span>` : '';
         let statusText = isComplete
-            ? settingsT('settingsBasic.aiChannelReady', '可用')
+            ? settingsT('settingsBasic.aiChannelComplete', '配置完整')
             : settingsT('settingsBasic.aiChannelDraft', '待完善');
-        let statusClass = isComplete ? 'ready' : 'draft';
+        let statusClass = isComplete ? 'complete' : 'draft';
         if (probe) {
             statusText = probe.message || statusText;
             statusClass = probe.status || statusClass;
@@ -2778,19 +2788,36 @@ function updateAIChannelEditorChrome(id) {
     const ai = ensureAIConfigShape(currentConfig || {});
     const channelId = normalizeAIChannelId(id || ai.default_channel || 'default');
     const ch = ai.channels[channelId] || {};
+    const isDefault = channelId === ai.default_channel;
+    const isComplete = !validateSelectedAIChannelPayload(ch);
+    const probe = aiChannelProbeResults[channelId] || null;
     const title = document.getElementById('ai-channel-editor-title');
     const meta = document.getElementById('ai-channel-editor-meta');
-    if (title) title.textContent = displayAIChannelName(channelId, ch);
+    if (title) {
+        title.textContent = settingsT('settingsBasic.aiChannelFormContextHint', '表单保存后会更新该通道配置。');
+    }
     if (meta) {
-        const parts = [
-            channelId === ai.default_channel
-                ? settingsT('settingsBasic.aiChannelDefaultMeta', '默认通道')
-                : settingsT('settingsBasic.aiChannelCustomMeta', '自定义通道'),
-            ch.provider === 'claude' ? 'Claude' : settingsT('settingsBasic.aiChannelOpenAICompat', 'OpenAI 兼容'),
-            ch.model || settingsT('settingsBasic.aiChannelModelMissing', '未填写模型'),
-            channelHostLabel(ch.base_url)
-        ].filter(Boolean);
-        meta.textContent = parts.join(' / ');
+        const provider = ch.provider === 'claude' ? 'Claude' : settingsT('settingsBasic.aiChannelOpenAICompat', 'OpenAI 兼容');
+        const statusText = probe?.message || (isComplete
+            ? settingsT('settingsBasic.aiChannelComplete', '配置完整')
+            : settingsT('settingsBasic.aiChannelDraft', '待完善'));
+        const statusClass = probe?.status || (isComplete ? 'complete' : 'draft');
+        const chips = [
+            {
+                label: isDefault
+                    ? settingsT('settingsBasic.aiChannelDefaultMeta', '默认通道')
+                    : settingsT('settingsBasic.aiChannelCustomMeta', '自定义通道'),
+                className: isDefault ? 'default' : ''
+            },
+            { label: provider },
+            { label: ch.model || settingsT('settingsBasic.aiChannelModelMissing', '未填写模型') },
+            { label: channelHostLabel(ch.base_url) },
+            { label: statusText, className: statusClass }
+        ].filter((chip) => chip.label);
+        meta.innerHTML = chips.map((chip) => {
+            const className = chip.className ? ` ${escapeAIChannelHtml(chip.className)}` : '';
+            return `<span class="ai-channel-editor-chip${className}" title="${escapeAIChannelHtml(chip.label)}">${escapeAIChannelHtml(chip.label)}</span>`;
+        }).join('');
     }
 }
 
@@ -3536,10 +3563,10 @@ async function testHitlAuditModelConnection() {
     const resultEl = document.getElementById('test-hitl-audit-model-result');
     const cfg = collectHitlAuditModelEffectiveConfig();
 
-    if (!cfg.api_key || !cfg.model) {
+    if (!cfg.base_url || !cfg.api_key || !cfg.model) {
         if (resultEl) {
             resultEl.style.color = 'var(--danger-color, #e53e3e)';
-            resultEl.textContent = typeof window.t === 'function' ? window.t('settingsBasic.testFillRequired') : '请先填写 API Key 和模型';
+            resultEl.textContent = typeof window.t === 'function' ? window.t('settingsBasic.testFillRequired') : '请先填写 Base URL、API Key 和模型';
         }
         return;
     }
@@ -3604,6 +3631,29 @@ function setConnectionTestResult(resultEl, state, message, title) {
     }
 }
 
+function syncConnectionTestResultForSelectedAIChannel() {
+    const resultEl = document.getElementById('test-openai-result');
+    if (!resultEl) return;
+    const channelId = normalizeAIChannelId(selectedAIChannelId || currentConfig?.ai?.default_channel || 'default');
+    const probe = aiChannelProbeResults[channelId];
+    if (!probe) {
+        setConnectionTestResult(resultEl, '', '');
+        return;
+    }
+    const state = probe.status === 'ready'
+        ? 'is-success'
+        : probe.status === 'failed'
+            ? 'is-error'
+            : 'is-muted';
+    let message = probe.message || '';
+    const fillRequiredMessage = settingsT('settingsBasic.testFillRequired', '请先填写 Base URL、API Key 和模型');
+    const failedPrefix = (typeof window.t === 'function' ? window.t('settingsBasic.testFailed') : '连接失败') + ': ';
+    if (probe.status === 'failed' && message && message !== fillRequiredMessage && !message.startsWith(failedPrefix)) {
+        message = failedPrefix + message;
+    }
+    setConnectionTestResult(resultEl, state, message);
+}
+
 function showConnectionTestFailure(resultEl, errorText) {
     if (!resultEl) return;
     const formatted = formatConnectionTestError(errorText);
@@ -3624,15 +3674,29 @@ async function testOpenAIConnection() {
     const baseUrl = document.getElementById('openai-base-url').value.trim();
     const apiKey = document.getElementById('openai-api-key').value.trim();
     const model = document.getElementById('openai-model').value.trim();
+    const channelId = normalizeAIChannelId(selectedAIChannelId || currentConfig?.ai?.default_channel || 'default');
+    const isTestingSameChannel = () => normalizeAIChannelId(selectedAIChannelId || currentConfig?.ai?.default_channel || 'default') === channelId;
 
-    if (!apiKey || !model) {
-        setConnectionTestResult(resultEl, 'is-error', typeof window.t === 'function' ? window.t('settingsBasic.testFillRequired') : '请先填写 API Key 和模型');
+    if (!baseUrl || !apiKey || !model) {
+        const message = typeof window.t === 'function' ? window.t('settingsBasic.testFillRequired') : '请先填写 Base URL、API Key 和模型';
+        aiChannelProbeResults[channelId] = { status: 'failed', message };
+        if (isTestingSameChannel()) {
+            setConnectionTestResult(resultEl, 'is-error', message);
+        }
+        syncSelectedAIChannelUI();
         return;
     }
 
-    btn.style.pointerEvents = 'none';
-    btn.style.opacity = '0.5';
-    setConnectionTestResult(resultEl, 'is-muted', typeof window.t === 'function' ? window.t('settingsBasic.testing') : '测试中...');
+    if (btn) {
+        btn.style.pointerEvents = 'none';
+        btn.style.opacity = '0.5';
+    }
+    const testingMessage = settingsT('settingsBasic.testing', '测试中...');
+    aiChannelProbeResults[channelId] = { status: 'testing', message: testingMessage };
+    if (isTestingSameChannel()) {
+        setConnectionTestResult(resultEl, 'is-muted', testingMessage);
+    }
+    syncSelectedAIChannelUI();
 
     try {
         const response = await apiFetch('/api/config/test-openai', {
@@ -3651,15 +3715,31 @@ async function testOpenAIConnection() {
         if (result.success) {
             const latency = result.latency_ms ? ` (${result.latency_ms}ms)` : '';
             const modelInfo = result.model ? ` [${result.model}]` : '';
-            setConnectionTestResult(resultEl, 'is-success', (typeof window.t === 'function' ? window.t('settingsBasic.testSuccess') : '连接成功') + modelInfo + latency);
+            const message = (typeof window.t === 'function' ? window.t('settingsBasic.testSuccess') : '连接成功') + modelInfo + latency;
+            aiChannelProbeResults[channelId] = { status: 'ready', message };
+            if (isTestingSameChannel()) {
+                setConnectionTestResult(resultEl, 'is-success', message);
+            }
         } else {
-            showConnectionTestFailure(resultEl, result.error || '未知错误');
+            const message = formatConnectionTestError(result.error || '未知错误').message;
+            aiChannelProbeResults[channelId] = { status: 'failed', message };
+            if (isTestingSameChannel()) {
+                showConnectionTestFailure(resultEl, message);
+            }
         }
     } catch (error) {
-        showConnectionTestFailure(resultEl, error.message || '测试出错');
+        const message = formatConnectionTestError(error.message || '测试出错').message;
+        aiChannelProbeResults[channelId] = { status: 'failed', message };
+        if (isTestingSameChannel()) {
+            showConnectionTestFailure(resultEl, message);
+        }
     } finally {
-        btn.style.pointerEvents = '';
-        btn.style.opacity = '';
+        updateAIChannelSelectOption(channelId);
+        syncSelectedAIChannelUI();
+        if (btn) {
+            btn.style.pointerEvents = '';
+            btn.style.opacity = '';
+        }
     }
 }
 
