@@ -53,6 +53,7 @@ type DB struct {
 	einoCheckpointBaseDir    string // checkpoint_dir root (per-conversation subdirs)
 	einoReductionRootDir     string // reduction_root_dir or default tmp/reduction (conversations/<id> subdirs)
 	einoWorkspaceRootDir     string // workspace_root_dir or default tmp/workspace (projects|conversations/<id> subdirs)
+	chatUploadsDir           string // chat_uploads root (<date>/<conversationID> subdirs)
 	checkpointLoopName       string
 	checkpointStop           chan struct{}
 	checkpointDone           chan struct{}
@@ -176,6 +177,16 @@ func (db *DB) SetEinoConversationDirs(plantaskBase, checkpointBase, reductionRoo
 	db.einoCheckpointBaseDir = strings.TrimSpace(checkpointBase)
 	db.einoReductionRootDir = strings.TrimSpace(reductionRoot)
 	db.einoWorkspaceRootDir = strings.TrimSpace(workspaceRoot)
+}
+
+// SetChatUploadsDir configures the chat_uploads root so DeleteConversation can remove
+// uploaded attachment files. Their chat_upload_artifacts rows already disappear via
+// ON DELETE CASCADE; without this the files themselves would linger forever.
+func (db *DB) SetChatUploadsDir(dir string) {
+	if db == nil {
+		return
+	}
+	db.chatUploadsDir = strings.TrimSpace(dir)
 }
 
 // initTables 初始化数据库表
@@ -412,6 +423,7 @@ func (db *DB) initTables() error {
 		impact TEXT,
 		recommendation TEXT,
 		retest_notes TEXT,
+		retest_log TEXT NOT NULL DEFAULT '',
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		project_id TEXT,
@@ -808,6 +820,16 @@ func (db *DB) initTables() error {
 		return fmt.Errorf("创建conversations表失败: %w", err)
 	}
 
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS vulnerability_retests (
+        conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+        source_conversation_id TEXT NOT NULL,
+        vulnerability_id TEXT NOT NULL,
+        source_project_id TEXT NOT NULL DEFAULT '',
+        pending_prompt TEXT NOT NULL DEFAULT ''
+    )`); err != nil {
+		return fmt.Errorf("创建复测分支表失败: %w", err)
+	}
+
 	if _, err := db.Exec(createMessagesTable); err != nil {
 		return fmt.Errorf("创建messages表失败: %w", err)
 	}
@@ -918,10 +940,16 @@ func (db *DB) initTables() error {
 	for tableName, ddl := range map[string]string{
 		"c2_listeners": createC2ListenersTable,
 		"c2_sessions":  createC2SessionsTable,
-		"c2_tasks":     createC2TasksTable,
-		"c2_files":     createC2FilesTable,
-		"c2_events":    createC2EventsTable,
-		"c2_profiles":  createC2ProfilesTable,
+		"c2_http_session_auth": `CREATE TABLE IF NOT EXISTS c2_http_session_auth (
+          implant_uuid TEXT PRIMARY KEY,
+          listener_id TEXT NOT NULL,
+          token_hash TEXT NOT NULL,
+          FOREIGN KEY (listener_id) REFERENCES c2_listeners(id) ON DELETE CASCADE
+        );`,
+		"c2_tasks":    createC2TasksTable,
+		"c2_files":    createC2FilesTable,
+		"c2_events":   createC2EventsTable,
+		"c2_profiles": createC2ProfilesTable,
 	} {
 		if _, err := db.Exec(ddl); err != nil {
 			return fmt.Errorf("创建%s表失败: %w", tableName, err)
@@ -1478,6 +1506,7 @@ func (db *DB) migrateVulnerabilitiesConversationFK() error {
 		impact TEXT,
 		recommendation TEXT,
 		retest_notes TEXT,
+		retest_log TEXT NOT NULL DEFAULT '',
 		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		project_id TEXT,
@@ -1491,14 +1520,14 @@ func (db *DB) migrateVulnerabilitiesConversationFK() error {
 	INSERT INTO vulnerabilities_new (
 		id, conversation_id, conversation_tag, task_tag, title, description,
 		severity, status, vulnerability_type, target, preconditions, reproduction_steps,
-		evidence, impact, recommendation, retest_notes,
+		evidence, impact, recommendation, retest_notes, retest_log,
 		created_at, updated_at, project_id
 	)
 	SELECT
 		id, conversation_id, conversation_tag, task_tag, title, description,
 		severity, status, vulnerability_type, target,
 		COALESCE(preconditions, ''), COALESCE(reproduction_steps, ''),
-		COALESCE(evidence, ''), impact, recommendation, COALESCE(retest_notes, ''),
+		COALESCE(evidence, ''), impact, recommendation, COALESCE(retest_notes, ''), COALESCE(retest_log, ''),
 		created_at, updated_at, project_id
 	FROM vulnerabilities;`
 	if _, err := tx.Exec(copyRows); err != nil {
@@ -1573,6 +1602,7 @@ func (db *DB) migrateVulnerabilitiesTable() error {
 		{name: "reproduction_steps", stmt: "ALTER TABLE vulnerabilities ADD COLUMN reproduction_steps TEXT"},
 		{name: "evidence", stmt: "ALTER TABLE vulnerabilities ADD COLUMN evidence TEXT"},
 		{name: "retest_notes", stmt: "ALTER TABLE vulnerabilities ADD COLUMN retest_notes TEXT"},
+		{name: "retest_log", stmt: "ALTER TABLE vulnerabilities ADD COLUMN retest_log TEXT NOT NULL DEFAULT ''"},
 	}
 
 	for _, col := range columns {

@@ -2,7 +2,15 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+    <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0b1120" media="(prefers-color-scheme: dark)">
+    <meta name="format-detection" content="telephone=no">
+    <link rel="manifest" href="/static/site.webmanifest">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="CyberStrikeAI">
     <title>CyberStrikeAI</title>
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=20260728">
     <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico?v=20260728">
@@ -31,12 +39,14 @@
             }
         })();
     </script>
-    <link rel="stylesheet" href="/static/css/style.css?v=20260907-blocked-1">
+    <link rel="stylesheet" href="/static/css/style.css?v=20261010-layout-overflow-1">
     <link rel="stylesheet" href="/static/css/tool-guard.css?v=20260907-7">
     <link rel="stylesheet" href="/static/css/chat-plan-progress.css?v=20260813-4">
     <link rel="stylesheet" href="/static/css/c2.css">
     <link rel="stylesheet" href="/static/vendor/xterm.css">
-    <script src="/static/js/router.js?v=20260907-1"></script>
+    <!-- 移动端样式层：全部规则限定在 767.98px 以下，桌面端零影响 -->
+    <link rel="stylesheet" href="/static/css/mobile.css?v=20261007-glass-1">
+    <script src="/static/js/router.js?v=20261009-retest-1"></script>
 </head>
 <body>
     <div id="login-overlay" class="login-overlay" style="display: none;">
@@ -50,14 +60,25 @@
                 </h2>
                 <p class="login-subtitle" data-i18n="login.subtitle">使用平台账号登录，默认管理员为 admin。</p>
             </div>
-            <form id="login-form" class="login-form">
+            <form id="login-form" class="login-form" novalidate>
                 <div class="form-group">
                     <label for="login-username" data-i18n="login.usernameLabel">用户名</label>
-                    <input type="text" id="login-username" placeholder="admin" autocomplete="username" data-i18n="login.usernamePlaceholder" data-i18n-attr="placeholder" />
+                    <input type="text" id="login-username" placeholder="admin" required maxlength="64" autocomplete="username" data-i18n="login.usernamePlaceholder" data-i18n-attr="placeholder" />
                 </div>
                 <div class="form-group">
                     <label for="login-password" data-i18n="login.passwordLabel">密码</label>
-                    <input type="password" id="login-password" placeholder="输入登录密码" required autocomplete="current-password" data-i18n="login.passwordPlaceholder" data-i18n-attr="placeholder" />
+                    <div class="login-password-field">
+                        <input type="password" id="login-password" placeholder="输入登录密码" required autocomplete="current-password" aria-describedby="login-error" data-i18n="login.passwordPlaceholder" data-i18n-attr="placeholder" />
+                        <button type="button" id="login-password-toggle" class="login-password-toggle" aria-label="显示密码" title="显示密码" aria-controls="login-password" aria-pressed="false" onclick="toggleLoginPasswordVisibility()" data-i18n="login.showPassword" data-i18n-attr="aria-label,title" data-i18n-skip-text="true">
+                            <svg class="login-password-icon login-password-icon--show" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+                                <circle cx="12" cy="12" r="3" />
+                            </svg>
+                            <svg class="login-password-icon login-password-icon--hide" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                                <path d="m3 3 18 18M10.6 5.1A12 12 0 0 1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-3 4M6.2 6.2A18 18 0 0 0 2 12s3.5 7 10 7a12 12 0 0 0 5.8-1.8M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+                            </svg>
+                        </button>
+                    </div>
                 </div>
                 <div id="login-error" class="login-error" role="alert" style="display: none;"></div>
                 <button type="submit" class="btn-primary login-submit">
@@ -115,6 +136,7 @@
                             <div id="lang-dropdown" class="lang-dropdown" style="display: none;">
                                 <div class="lang-option" data-lang="zh-CN" onclick="onLanguageSelect('zh-CN')">中文</div>
                                 <div class="lang-option" data-lang="en-US" onclick="onLanguageSelect('en-US')">English</div>
+                                <div class="lang-option" data-lang="ru-RU" onclick="onLanguageSelect('ru-RU')">Русский</div>
                             </div>
                         </div>
                         <div class="notification-menu-container">
@@ -1253,7 +1275,7 @@
                                 </div>
                                 <div class="chat-composer-footer">
                                     <div class="chat-composer-footer-leading">
-                                        <input type="file" id="chat-file-input" class="chat-file-input-hidden" multiple accept="*" data-i18n="chat.selectFile" data-i18n-attr="title" title="选择文件">
+                                        <input type="file" id="chat-file-input" class="chat-file-input-hidden" multiple accept="*/*" data-i18n="chat.selectFile" data-i18n-attr="title" title="选择文件">
                                         <button type="button" class="chat-upload-btn" onclick="document.getElementById('chat-file-input').click()" data-i18n="chat.uploadFile" data-i18n-attr="title,aria-label" data-i18n-skip-text="true" title="上传文件（可多选或拖拽到此处）" aria-label="上传文件（可多选或拖拽到此处）">
                                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                                                 <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
@@ -1464,6 +1486,7 @@
                                     </button>
                                 </div>
                             </div>
+                            <p class="hitl-page-audit-engine" id="hitl-page-audit-engine" hidden></p>
                             <p class="hitl-page-reviewer-hint" data-i18n="hitl.pageReviewerHint">作用于当前选中会话；未选会话时保存到本机，新建会话时沿用。切换后立即生效。</p>
                         </div>
                         <div class="hitl-page-tabs" role="tablist">
@@ -1553,6 +1576,7 @@
                                 </div>
                                 <p class="hitl-page-strategy-hint" id="hitl-strategy-hint-approval" data-i18n="hitl.strategyHintApproval">白名单内工具免审批；审批模式下审计 Agent 仅裁决通过/拒绝。</p>
                                 <p class="hitl-page-strategy-hint" id="hitl-strategy-hint-review-edit" hidden data-i18n="hitl.strategyHintReviewEdit">审查编辑模式下审计 Agent 可通过 editedArguments 收窄参数后放行；无法安全改参时应拒绝。</p>
+                                <p class="hitl-page-strategy-hint" id="hitl-strategy-hint-jev" hidden data-i18n="hitl.strategyHintJev">当前是 TypeSafe Jev：会读取下面的自定义策略并编成结构化问题；破坏业务可用性等内置规则仍是硬底线。Jev 不能改参。</p>
                                 <textarea id="hitl-audit-agent-prompt" class="hitl-strategy-textarea" rows="14" spellcheck="false" autocomplete="off"></textarea>
                                 <textarea id="hitl-audit-agent-prompt-review-edit" class="hitl-strategy-textarea" rows="14" spellcheck="false" autocomplete="off" hidden></textarea>
                                 <div id="hitl-strategy-feedback" class="hitl-apply-feedback" role="status" aria-live="polite" hidden></div>
@@ -1602,6 +1626,10 @@
                                 <div class="hitl-log-detail-row">
                                     <dt data-i18n="hitl.colDecidedBy">审批方</dt>
                                     <dd id="hitl-log-detail-decided-by">—</dd>
+                                </div>
+                                <div class="hitl-log-detail-row" id="hitl-log-detail-engine-row" hidden>
+                                    <dt data-i18n="hitl.colAuditEngine">审批引擎</dt>
+                                    <dd id="hitl-log-detail-engine">—</dd>
                                 </div>
                                 <div class="hitl-log-detail-row">
                                     <dt data-i18n="hitl.colTime">时间</dt>
@@ -2133,9 +2161,9 @@
                                 <div class="asset-editor-section-group">
                                     <div class="asset-editor-group-heading"><h3 data-i18n="assets.locationAndStatus">地理与状态</h3><p data-i18n="assets.locationAndStatusHint">记录资产归属地区和当前启用状态</p></div>
                                     <div class="asset-editor-grid">
-                                        <label class="asset-editor-field"><span data-i18n="assets.country">国家/地区</span><input id="asset-edit-country" type="text" maxlength="100" placeholder="CN"></label>
-                                        <label class="asset-editor-field"><span data-i18n="assets.province">省份/州</span><input id="asset-edit-province" type="text" maxlength="100" placeholder="Beijing"></label>
-                                        <label class="asset-editor-field"><span data-i18n="assets.city">城市</span><input id="asset-edit-city" type="text" maxlength="100" placeholder="Beijing"></label>
+                                        <label class="asset-editor-field"><span data-i18n="assets.country">国家/地区</span><input id="asset-edit-country" type="text" maxlength="100" placeholder="中国" data-i18n="assets.countryExample" data-i18n-attr="placeholder"></label>
+                                        <label class="asset-editor-field"><span data-i18n="assets.province">省份/州</span><input id="asset-edit-province" type="text" maxlength="100" placeholder="北京" data-i18n="assets.provinceExample" data-i18n-attr="placeholder"></label>
+                                        <label class="asset-editor-field"><span data-i18n="assets.city">城市</span><input id="asset-edit-city" type="text" maxlength="100" placeholder="北京" data-i18n="assets.cityExample" data-i18n-attr="placeholder"></label>
                                         <label class="asset-editor-field"><span data-i18n="assets.status">状态</span><select id="asset-edit-status"><option value="active" data-i18n="assets.statusActive">活跃</option><option value="inactive" data-i18n="assets.statusInactive">停用</option></select></label>
                                     </div>
                                 </div>
@@ -3239,7 +3267,7 @@
 
                 <!-- C2 模态框 -->
                 <div id="c2-modal" class="c2-modal-overlay" style="display:none;" onclick="if(event.target===this)C2.closeModal()">
-                    <div class="c2-modal" onclick="event.stopPropagation()">
+                    <div class="c2-modal">
                         <div id="c2-modal-content"></div>
                     </div>
                 </div>
@@ -3597,6 +3625,12 @@
                                 </div>
                                 <div class="settings-nav-item" data-section="audit" onclick="switchSettingsSection('audit')">
                                     <span data-i18n="settings.nav.audit">日志审计</span>
+                                </div>
+                                <div class="settings-nav-item" data-section="storage" onclick="switchSettingsSection('storage')">
+                                    <span data-i18n="settings.nav.storage">存储清理</span>
+                                </div>
+                                <div class="settings-nav-item" data-section="update" data-require-permission="update:read" onclick="switchSettingsSection('update')">
+                                    <span data-i18n="settings.nav.update">一键更新</span>
                                 </div>
                             </nav>
                         </aside>
@@ -3983,6 +4017,14 @@
                                             <h5 data-i18n="settings.hitl.auditModelTitle">审计 Agent 模型</h5>
                                         </div>
                                         <div class="form-group">
+                                            <label for="hitl-audit-backend" data-i18n="settings.hitl.auditBackend">审批引擎</label>
+                                            <select id="hitl-audit-backend" class="form-select">
+                                                <option value="openai" data-i18n="settings.hitl.auditBackendOpenAI">OpenAI 协议模型</option>
+                                                <option value="typesafe" data-i18n="settings.hitl.auditBackendTypeSafe">TypeSafe Jev</option>
+                                            </select>
+                                            <small class="form-hint" data-i18n="settings.hitl.auditBackendHint">二选一：OpenAI 兼容聊天模型按提示词输出 JSON；Jev 用结构化问题做放通/拦截，不能改参。</small>
+                                        </div>
+                                        <div class="form-group" id="hitl-audit-openai-provider-group">
                                             <label for="hitl-audit-model-provider" data-i18n="settingsBasic.apiProvider">API 提供商</label>
                                             <select id="hitl-audit-model-provider" class="form-select">
                                                 <option value="" data-i18n="settings.hitl.auditModelReuseMain">跟随主模型配置</option>
@@ -4009,7 +4051,8 @@
                                             </div>
                                             <small id="fetch-hitl-audit-models-hint" class="form-hint" style="display: none; font-size: 0.75rem; margin-top: 4px;"></small>
                                             <span id="fetch-hitl-audit-models-result" style="font-size: 0.75rem; margin-top: 2px; display: block;"></span>
-                                            <small class="form-hint" data-i18n="settings.hitl.auditModelHint">仅审计 Agent 审批时使用；人工审批不消耗模型。</small>
+                                            <small id="hitl-audit-model-openai-hint" class="form-hint" data-i18n="settings.hitl.auditModelHint">仅审计 Agent 审批时使用；人工审批不消耗模型。</small>
+                                            <small id="hitl-audit-model-typesafe-hint" class="form-hint" data-i18n="settings.hitl.auditModelTypeSafeHint" hidden>Jev 走 TypeSafe System One，不是 OpenAI 协议。API Key 必填，不复用主模型密钥；模型留空使用 jev-latest。审查编辑模式下 Jev 只做放通/拦截，不会改参。</small>
                                         </div>
                                         <div style="display: flex; align-items: center; gap: 8px; margin-top: 2px;">
                                             <a href="javascript:void(0)" id="test-hitl-audit-model-btn" onclick="testHitlAuditModelConnection()" style="font-size: 0.8125rem; color: var(--accent-color, #3182ce); text-decoration: none; cursor: pointer; user-select: none;" data-i18n="settings.hitl.testAuditModel">测试审计模型</a>
@@ -4035,6 +4078,7 @@
                                             <label for="hitl-audit-agent-prompt-settings" data-i18n="settings.hitl.auditPromptApproval">审批模式提示词</label>
                                             <textarea id="hitl-audit-agent-prompt-settings" rows="10" spellcheck="false" autocomplete="off"></textarea>
                                             <small class="form-hint" data-i18n="settings.hitl.auditPromptHint">留空时使用后端内置默认策略。</small>
+                                            <small id="hitl-audit-prompt-typesafe-hint" class="form-hint" data-i18n="settings.hitl.auditPromptTypeSafeHint" hidden>当前审批引擎是 TypeSafe Jev：会读取本页/人机协同页的自定义策略并编成结构化问题；内置破坏性规则仍是硬底线。Jev 不能改参。</small>
                                         </div>
                                         <div class="form-group">
                                             <label for="hitl-audit-agent-prompt-review-edit-settings" data-i18n="settings.hitl.auditPromptReviewEdit">审查编辑模式提示词</label>
@@ -5049,22 +5093,122 @@
                                     <div class="settings-form">
                                         <div class="form-group">
                                             <label for="auth-current-password" data-i18n="settingsSecurity.currentPassword">当前密码</label>
-                                            <input type="password" id="auth-current-password" data-i18n="settingsSecurity.currentPasswordPlaceholder" data-i18n-attr="placeholder" placeholder="输入当前登录密码" autocomplete="current-password" />
+                                            <input type="password" id="auth-current-password" oninput="clearPasswordFieldError(this)" data-i18n="settingsSecurity.currentPasswordPlaceholder" data-i18n-attr="placeholder" placeholder="输入当前登录密码" autocomplete="current-password" />
+                                            <small id="auth-current-password-error" class="password-field-error" role="alert" hidden></small>
                                         </div>
                                         <div class="form-group">
                                             <label for="auth-new-password" data-i18n="settingsSecurity.newPassword">新密码</label>
-                                            <input type="password" id="auth-new-password" data-i18n="settingsSecurity.newPasswordPlaceholder" data-i18n-attr="placeholder" placeholder="设置新密码（至少 8 位）" autocomplete="new-password" />
+                                            <input type="password" id="auth-new-password" oninput="clearPasswordFieldError(this)" data-i18n="settingsSecurity.newPasswordPlaceholder" data-i18n-attr="placeholder" placeholder="设置新密码（至少 8 位）" autocomplete="new-password" />
+                                            <small id="auth-new-password-error" class="password-field-error" role="alert" hidden></small>
                                         </div>
                                         <div class="form-group">
                                             <label for="auth-confirm-password" data-i18n="settingsSecurity.confirmPassword">确认新密码</label>
-                                            <input type="password" id="auth-confirm-password" data-i18n="settingsSecurity.confirmPasswordPlaceholder" data-i18n-attr="placeholder" placeholder="再次输入新密码" autocomplete="new-password" />
+                                            <input type="password" id="auth-confirm-password" oninput="clearPasswordFieldError(this)" data-i18n="settingsSecurity.confirmPasswordPlaceholder" data-i18n-attr="placeholder" placeholder="再次输入新密码" autocomplete="new-password" />
+                                            <small id="auth-confirm-password-error" class="password-field-error" role="alert" hidden></small>
                                         </div>
+                                        <div id="password-form-error" class="password-field-error" role="alert" hidden></div>
                                         <div class="form-actions">
                                             <button class="btn-secondary" type="button" onclick="resetPasswordForm()" data-i18n="settingsSecurity.clear">清空</button>
                                             <button class="btn-primary change-password-submit" type="button" data-require-permission="auth:self" onclick="changePassword()" data-i18n="settingsSecurity.changePasswordBtn">修改密码</button>
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+
+                            <!-- 存储清理 -->
+                            <div id="settings-section-storage" class="settings-section-content">
+                                <div class="settings-section-header">
+                                    <h3 data-i18n="settingsStorage.title">存储清理</h3>
+                                </div>
+                                <p class="storage-desc" data-i18n="settingsStorage.subtitle">统计并清理运行期间产生的磁盘垃圾（Agent 工作区、工具输出缓存、C2 产物、对话上传件等）。删除不可逆，建议先预览再执行。</p>
+
+                                <div class="storage-overview" id="storage-overview" hidden>
+                                    <div class="storage-overview-card">
+                                        <span class="storage-overview-label" data-i18n="settingsStorage.diskUsed">磁盘已用</span>
+                                        <strong id="storage-disk-used">—</strong>
+                                        <div class="storage-usage-bar"><span id="storage-usage-bar-fill"></span></div>
+                                        <span class="storage-overview-hint" id="storage-disk-detail">—</span>
+                                    </div>
+                                    <div class="storage-overview-card">
+                                        <span class="storage-overview-label" data-i18n="settingsStorage.runtimeTotal">运行空间占用</span>
+                                        <strong id="storage-total-bytes">—</strong>
+                                        <span class="storage-overview-hint" id="storage-total-units">—</span>
+                                    </div>
+                                    <div class="storage-overview-card storage-overview-card--accent">
+                                        <span class="storage-overview-label" data-i18n="settingsStorage.reclaimable">可回收</span>
+                                        <strong id="storage-reclaimable-bytes">—</strong>
+                                        <span class="storage-overview-hint" id="storage-reclaimable-units">—</span>
+                                    </div>
+                                    <div class="storage-overview-card">
+                                        <span class="storage-overview-label" data-i18n="settingsStorage.inodes">inode 使用</span>
+                                        <strong id="storage-inodes">—</strong>
+                                        <span class="storage-overview-hint" data-i18n="settingsStorage.inodesHint">扫描产生的海量小文件可能先耗尽 inode</span>
+                                    </div>
+                                </div>
+
+                                <div class="storage-toolbar">
+                                    <button type="button" class="btn-secondary" onclick="refreshStorageStatus(true)" data-i18n="settingsStorage.refresh">重新扫描</button>
+                                    <button type="button" class="btn-secondary" onclick="previewStorageCleanup()" data-i18n="settingsStorage.preview">预览可清理项</button>
+                                    <button type="button" class="btn-primary" data-require-permission="storage:write" onclick="runStorageCleanup()" data-i18n="settingsStorage.cleanNow">立即清理</button>
+                                    <span class="storage-scanned-at" id="storage-scanned-at"></span>
+                                </div>
+
+                                <div class="storage-result" id="storage-result" hidden></div>
+
+                                <div class="audit-log-table-wrap">
+                                    <table class="audit-log-table storage-table">
+                                        <thead>
+                                            <tr>
+                                                <th data-i18n="settingsStorage.colCategory">类别</th>
+                                                <th data-i18n="settingsStorage.colRoot">目录</th>
+                                                <th data-i18n="settingsStorage.colUnits">项目数</th>
+                                                <th data-i18n="settingsStorage.colSize">占用</th>
+                                                <th data-i18n="settingsStorage.colReclaimable">可回收</th>
+                                                <th data-i18n="settingsStorage.colRetention">保留天数</th>
+                                                <th data-i18n="settingsStorage.colEnabled">启用</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="storage-category-rows">
+                                            <tr><td colspan="7" class="storage-empty" data-i18n="settingsStorage.loading">加载中…</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div class="storage-policy">
+                                    <h4 data-i18n="settingsStorage.policyTitle">自动清理策略</h4>
+                                    <div class="storage-policy-grid">
+                                        <label class="storage-policy-field storage-policy-field--switch">
+                                            <input type="checkbox" id="storage-auto-clean" />
+                                            <span data-i18n="settingsStorage.autoClean">开启后台定时清理</span>
+                                        </label>
+                                        <label class="storage-policy-field">
+                                            <span data-i18n="settingsStorage.intervalMinutes">清理间隔（分钟）</span>
+                                            <input type="number" id="storage-interval-minutes" min="5" step="5" />
+                                        </label>
+                                        <label class="storage-policy-field">
+                                            <span data-i18n="settingsStorage.orphanGraceDays">孤儿目录宽限（天）</span>
+                                            <input type="number" id="storage-orphan-grace-days" min="0" step="1" />
+                                        </label>
+                                        <label class="storage-policy-field">
+                                            <span data-i18n="settingsStorage.activeGraceHours">活跃会话保护（小时）</span>
+                                            <input type="number" id="storage-active-grace-hours" min="1" step="1" />
+                                        </label>
+                                    </div>
+                                    <p class="storage-policy-hint" data-i18n="settingsStorage.policyHint">保留天数为 0 表示不按保留期清理，但会话已删除的孤儿目录仍会回收；最近有活动的会话在任何情况下都不会被清理。默认关闭自动清理，升级不会自动删除既有数据。</p>
+                                    <div class="form-actions">
+                                        <button type="button" class="btn-primary" data-require-permission="storage:write" onclick="saveStorageSettings()" data-i18n="settingsStorage.save">保存策略</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 一键更新 -->
+                            <div id="settings-section-update" class="settings-section-content" data-require-permission="update:read">
+                                <div class="settings-section-header update-section-head">
+                                    <h3 data-i18n="update.title">一键更新</h3>
+                                    <button class="btn-secondary" type="button" onclick="loadUpdateConsole()" data-i18n="common.refresh">刷新</button>
+                                </div>
+                                <p class="update-intro" data-i18n="update.intro">这一页改的就是当前正在应答请求的这套安装：拉取它自己跟踪的远端、重新编译、换掉二进制。你本机维护的 roles/skills/tools 与配置不会被覆盖。</p>
+                                <div id="update-console" class="update-console"></div>
                             </div>
 
                         </div>
@@ -5079,8 +5223,8 @@
                                     </div>
                                     <div class="page-header-actions">
                                         <button class="btn-secondary" type="button" onclick="refreshPlatformRbac(this)" data-i18n="common.refresh">刷新</button>
-                                        <button class="btn-secondary" type="button" onclick="openRbacRoleModal()" data-i18n="rbac.createRole">新建角色</button>
-                                        <button class="btn-primary" type="button" onclick="openRbacUserModal()" data-i18n="rbac.createUser">添加成员</button>
+                                        <button class="btn-secondary" type="button" onclick="openRbacRoleModal()" data-require-permission="rbac:write" data-i18n="rbac.createRole">新建角色</button>
+                                        <button class="btn-primary" type="button" onclick="openRbacUserModal()" data-require-permission="rbac:write" data-i18n="rbac.createUser">添加成员</button>
                                     </div>
                                 </div>
                                 <div class="page-content">
@@ -5305,7 +5449,7 @@
                                                     <label for="rbac-role-search" data-i18n="rbac.filterRoles">筛选角色</label>
                                                     <input id="rbac-role-search" class="form-input" type="search" placeholder="搜索角色或权限" data-i18n="rbac.searchRoles" data-i18n-attr="placeholder" oninput="setRbacRoleSearch(this.value)">
                                                 </div>
-                                                <button class="btn-primary btn-small" type="button" onclick="openRbacRoleModal()" data-i18n="rbac.createRole">新建角色</button>
+                                                <button class="btn-primary btn-small" type="button" onclick="openRbacRoleModal()" data-require-permission="rbac:write" data-i18n="rbac.createRole">新建角色</button>
                                             </div>
                                         </div>
                                         <div id="rbac-role-catalog" class="rbac-role-catalog"></div>
@@ -5686,10 +5830,32 @@
     <script src="/static/js/sanitize-markdown.js"></script>
     <!-- Cytoscape.js for attack chain visualization -->
     <script src="/static/vendor/cytoscape.min.js"></script>
-    <!-- ELK.js for high-quality DAG layout (reduces edge crossings) -->
-    <script src="/static/vendor/elk.bundled.js"></script>
-    <!-- SheetJS for XLSX export (info-collect) -->
-    <script src="/static/vendor/xlsx.full.min.js"></script>
+    <!-- ELK.js (1.5MB) + SheetJS (860KB)：移动端延迟加载，首屏不再阻塞解析。
+         桌面端走 document.write 分支，保持与静态 <script src> 完全一致的同步语义。
+         安全依据：chat.js:7450 与 fact-graph.js:491 均有 typeof ELK 守卫并降级为默认布局；
+         assets.js:127/234/1024 与 info-collect.js:1537 均有 XLSX 守卫。 -->
+    <script>
+    (function () {
+        var LAZY_VENDOR = ['/static/vendor/elk.bundled.js', '/static/vendor/xlsx.full.min.js'];
+        var mq = window.matchMedia && window.matchMedia('(max-width: 767.98px)').matches;
+        if (!mq) {
+            for (var i = 0; i < LAZY_VENDOR.length; i++) {
+                document.write('<script src="' + LAZY_VENDOR[i] + '"><\/script>');
+            }
+            return;
+        }
+        var load = function () {
+            LAZY_VENDOR.forEach(function (src) {
+                var s = document.createElement('script');
+                s.src = src;
+                s.async = false;
+                document.head.appendChild(s);
+            });
+        };
+        if (window.requestIdleCallback) { requestIdleCallback(load, { timeout: 2000 }); }
+        else { setTimeout(load, 1200); }
+    })();
+    </script>
     <script>
         // 确保ELK对象全局可用
         if (typeof ELK === 'undefined' && typeof elk !== 'undefined') {
@@ -6220,6 +6386,29 @@
         </div>
     </div>
 
+    <div id="vulnerability-retest-modal" class="modal">
+        <div class="modal-content" style="max-width: 720px;">
+            <div class="modal-header">
+                <h2 data-i18n="vulnerabilityRetest.title">复测漏洞</h2>
+                <button type="button" class="modal-close" onclick="closeAppModal('vulnerability-retest-modal')" aria-label="关闭">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="vulnerability-retest-title"></p>
+                <p class="form-hint" data-i18n="vulnerabilityRetest.hint">每次确认都会从原始对话创建独立分支，继承原项目和历史，可继续多轮验证。</p>
+                <div class="form-group">
+                    <label for="vulnerability-retest-prompt" data-i18n="vulnerabilityRetest.promptLabel">复测提示词</label>
+                    <textarea id="vulnerability-retest-prompt" rows="8" class="form-input"></textarea>
+                    <p class="form-hint" data-i18n="vulnerabilityRetest.placeholderHint">占位符发送时自动替换，也支持在后续对话中手动输入。</p>
+                </div>
+                <p id="vulnerability-retest-error" role="alert"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" onclick="closeAppModal('vulnerability-retest-modal')" data-i18n="common.cancel">取消</button>
+                <button type="button" id="vulnerability-retest-confirm" class="btn-primary" onclick="confirmVulnerabilityRetest()" data-i18n="vulnerabilityRetest.confirm">确认并开始复测</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 漏洞编辑模态框 -->
     <div id="vulnerability-modal" class="modal">
         <div class="modal-content" style="max-width: 900px;">
@@ -6236,8 +6425,8 @@
                     <p class="form-hint" data-i18n="vulnerabilityModal.projectHint">绑定后 Agent 在项目范围内可通过 list_vulnerabilities 看到本条记录；留空则尝试从会话自动关联。</p>
                 </div>
                 <div class="form-group">
-                    <label for="vulnerability-conversation-id"><span data-i18n="vulnerabilityModal.conversationId">会话ID</span> <span style="color: red;">*</span></label>
-                    <input type="text" id="vulnerability-conversation-id" data-i18n="vulnerabilityModal.conversationIdPlaceholder" data-i18n-attr="placeholder" placeholder="输入会话ID" required />
+                    <label for="vulnerability-conversation-id"><span data-i18n="vulnerabilityModal.conversationId">会话ID</span></label>
+                    <input type="text" id="vulnerability-conversation-id" data-i18n="vulnerabilityModal.conversationIdPlaceholder" data-i18n-attr="placeholder" placeholder="可选：输入已有会话ID，留空可独立添加漏洞" />
                 </div>
                 <div class="form-group">
                     <label for="vulnerability-conversation-tag" data-i18n="vulnerabilityModal.conversationTag">对话标签</label>
@@ -6672,6 +6861,7 @@
                     </div>
                     <textarea id="fact-modal-body" class="form-input fact-modal-body-input" rows="14" placeholder="攻击链步骤、HTTP/命令 POC、响应现象、证据…" oninput="updateFactFormHints()"></textarea>
                     <p id="fact-modal-body-hint" class="projects-field-hint" role="status"></p>
+                    <small class="form-hint" data-i18n="projects.factBodyRelationsHint">正文中的 discovered_on 等关系请填写到下方“关系边”字段，才能生成图谱连线。</small>
                 </div>
                 <div class="projects-form-field">
                     <label class="projects-filter-check projects-pin-toggle">
@@ -6800,7 +6990,7 @@
     <script src="/static/js/i18n.js"></script>
     <script src="/static/js/theme.js"></script>
     <script src="/static/js/builtin-tools.js"></script>
-    <script src="/static/js/auth.js?v=20260907-blocked-1"></script>
+    <script src="/static/js/auth.js?v=20261008-password-eye-1"></script>
     <script src="/static/js/modal.js"></script>
     <script src="/static/js/notifications.js"></script>
     <script src="/static/js/info-collect.js?v=20260717-1"></script>
@@ -6809,13 +6999,14 @@
     <script src="/static/js/dashboard.js"></script>
     <script src="/static/js/chat-scroll.js?v=20260815-1"></script>
     <script src="/static/js/monitor.js?v=20260907-blocked-1"></script>
-    <script src="/static/js/chat.js?v=20260907-blocked-1"></script>
+    <script src="/static/js/chat.js?v=20261009-retest-1"></script>
     <script src="/static/js/chat-plan-progress.js?v=20260815-1"></script>
     <script src="/static/js/hitl.js?v=20260819-1"></script>
-    <script src="/static/js/tool-guard.js?v=20260907-7"></script>
+    <script src="/static/js/tool-guard.js?v=20261010-conflict"></script>
     <script src="/static/js/settings.js?v=20260717-1"></script>
     <script src="/static/js/audit-datetime-picker.js"></script>
     <script src="/static/js/audit.js"></script>
+    <script src="/static/js/storage.js"></script>
     <script src="/static/js/wechat-robot.js"></script>
     <script src="/static/vendor/xterm.js"></script>
     <script src="/static/vendor/xterm-addon-fit.js"></script>
@@ -6824,15 +7015,18 @@
     <script src="/static/js/skills.js"></script>
     <script src="/static/js/fact-graph.js"></script>
     <script src="/static/js/projects.js?v=20260819-1"></script>
-    <script src="/static/js/vulnerability.js?v=14"></script>
+    <script src="/static/js/vulnerability.js?v=20261010-retest-2"></script>
     <script src="/static/js/webshell.js?v=20260907-blocked-1"></script>
     <script src="/static/js/chat-files.js"></script>
     <script src="/static/js/tasks.js"></script>
     <script src="/static/js/workflow-package-client.js"></script>
     <script src="/static/js/workflows.js"></script>
+    <script src="/static/js/update.js?v={{.Version}}"></script>
     <script src="/static/js/roles.js"></script>
     <script src="/static/js/rbac.js"></script>
     <script src="/static/js/c2.js"></script>
     <script src="/static/js/rbac-guards.js?v=20260907-1"></script>
+    <!-- 移动端交互层：必须最后加载，它包装 window.switchPage 并注入移动端 DOM -->
+    <script src="/static/js/mobile-ui.js?v=20261006-9"></script>
 </body>
 </html>

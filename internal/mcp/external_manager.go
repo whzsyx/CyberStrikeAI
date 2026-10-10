@@ -337,6 +337,7 @@ func (m *ExternalMCPManager) startClient(name string, autoReconnect bool) error 
 			if !autoReconnect {
 				m.mu.Lock()
 				serverCfg.ExternalMCPEnable = true
+				serverCfg.Disabled = false
 				m.configs[name] = serverCfg
 				m.mu.Unlock()
 			}
@@ -362,6 +363,7 @@ func (m *ExternalMCPManager) startClient(name string, autoReconnect bool) error 
 	// 更新配置为启用
 	m.mu.Lock()
 	serverCfg.ExternalMCPEnable = true
+	serverCfg.Disabled = false
 	m.configs[name] = serverCfg
 	// 清除之前的错误信息（重新启动时）
 	delete(m.errors, name)
@@ -443,6 +445,7 @@ func (m *ExternalMCPManager) StopClient(name string) error {
 
 	// 更新配置为禁用
 	serverCfg.ExternalMCPEnable = false
+	serverCfg.Disabled = true
 	m.configs[name] = serverCfg
 
 	m.clearReconnectState(name)
@@ -706,6 +709,13 @@ func (m *ExternalMCPManager) CallTool(ctx context.Context, toolName string, args
 	var client ExternalMCPClient
 	var blockedByGuard bool
 	handle, err := m.executionService.Submit(ctx, ExecutionRequest{
+		ConfirmCancellation: func(confirmCtx context.Context) error {
+			if confirmer, ok := client.(ExternalCancellationConfirmer); ok {
+				return confirmer.ConfirmToolCancellation(confirmCtx, actualToolName, args)
+			}
+			return fmt.Errorf("external MCP client has no cancellation acknowledgement")
+		},
+		Remote:         true,
 		ToolName:       toolName,
 		Arguments:      args,
 		ConversationID: MCPConversationIDFromContext(ctx),
@@ -1648,4 +1658,11 @@ func (m *ExternalMCPManager) StopAll() {
 		close(m.stopRefresh)
 	}
 	m.refreshWg.Wait()
+}
+
+// ExternalCancellationConfirmer is an optional adapter contract for MCP
+// servers with server-side cancellation receipts or lease/task status APIs.
+// Ordinary notifications/cancelled must never be treated as confirmation.
+type ExternalCancellationConfirmer interface {
+	ConfirmToolCancellation(context.Context, string, map[string]interface{}) error
 }

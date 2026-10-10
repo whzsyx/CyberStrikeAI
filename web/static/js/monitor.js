@@ -3,7 +3,7 @@ const progressTaskState = new Map();
 let userInterruptModalPending = null;
 let activeTaskInterval = null;
 const ACTIVE_TASK_REFRESH_INTERVAL = 2000; // 运行态与审批态需要及时自刷新
-const TASK_FINAL_STATUSES = new Set(['failed', 'timeout', 'cancelled', 'completed']);
+const TASK_FINAL_STATUSES = new Set(['failed', 'timeout', 'cancelled', 'completed', 'cleanup_unconfirmed']);
 const hitlInterruptToolItemMap = new Map();
 let activeTasksLoadPromise = null;
 let activeTasksVisualSignature = '';
@@ -77,11 +77,17 @@ if (typeof window !== 'undefined') {
 
 // 当前界面语言对应的 BCP 47 标签（与时间格式化一致）
 function getCurrentTimeLocale() {
+    if (typeof window.uiLocale === 'function') return window.uiLocale();
     if (typeof window.__locale === 'string' && window.__locale.length) {
-        return window.__locale.startsWith('zh') ? 'zh-CN' : 'en-US';
+        if (window.__locale.startsWith('zh')) return 'zh-CN';
+        if (window.__locale.startsWith('ru')) return 'ru-RU';
+        return 'en-US';
     }
     if (typeof i18next !== 'undefined' && i18next.language) {
-        return (i18next.language || '').startsWith('zh') ? 'zh-CN' : 'en-US';
+        const lang = String(i18next.language || '');
+        if (lang.startsWith('zh')) return 'zh-CN';
+        if (lang.startsWith('ru')) return 'ru-RU';
+        return 'en-US';
     }
     return 'zh-CN';
 }
@@ -90,7 +96,7 @@ function getCurrentTimeLocale() {
 function getTimeFormatOptions() {
     const loc = getCurrentTimeLocale();
     const base = { hour: '2-digit', minute: '2-digit', second: '2-digit' };
-    if (loc === 'zh-CN') {
+    if (loc === 'zh-CN' || loc === 'ru-RU') {
         base.hour12 = false;
     }
     return base;
@@ -417,6 +423,13 @@ function getToolCallMapping(progressId, toolCallId) {
     if (scoped) return scoped;
     // 兼容历史遗留：若 map 中还有旧格式 key（仅 toolCallId），兜底读取。
     return toolCallStatusMap.get(String(toolCallId)) || null;
+}
+
+function progressDoneOutcome(data) {
+    const status = String(data && (data.status || data.workflowStatus) || '').toLowerCase();
+    if (status === 'cancelled' || status === 'canceled') return { key: 'chat.taskCancelled', fallback: '任务已取消', icon: '⛔', toolStatus: 'cancelled' };
+    if (['failed', 'timeout', 'cleanup_failed', 'cleanup_unconfirmed'].includes(status)) return { key: status === 'timeout' ? 'tasks.statusTimeout' : 'tasks.statusFailed', fallback: status === 'timeout' ? '任务超时' : '任务执行失败', icon: '❌', toolStatus: 'failed' };
+    return { key: 'chat.penetrationTestComplete', fallback: '渗透测试完成', icon: '✅', toolStatus: 'failed' };
 }
 
 function finalizeOutstandingToolCallsForProgress(progressId, finalStatus) {
@@ -3860,7 +3873,7 @@ function handleStreamEvent(event, progressElement, progressId,
             // 立即刷新任务状态
             loadActiveTasks();
             // Close any remaining running tool calls for this progress.
-            finalizeOutstandingToolCallsForProgress(progressId, 'failed');
+            finalizeOutstandingToolCallsForProgress(progressId, 'cancelled');
             break;
 
         case 'response_start': {
@@ -4181,7 +4194,8 @@ function handleStreamEvent(event, progressElement, progressId,
             // 完成，更新进度标题（如果进度消息还存在）
             const doneTitle = document.querySelector(`#${progressId} .progress-stage`);
             if (doneTitle) {
-                doneTitle.textContent = '✅ ' + (typeof window.t === 'function' ? window.t('chat.penetrationTestComplete') : '渗透测试完成');
+                const outcome = progressDoneOutcome(event.data);
+                doneTitle.textContent = outcome.icon + ' ' + (typeof window.t === 'function' ? window.t(outcome.key) : outcome.fallback);
             }
             // 更新对话ID
             if (event.data && event.data.conversationId) {
@@ -4192,7 +4206,9 @@ function handleStreamEvent(event, progressElement, progressId,
                 updateProgressConversation(progressId, event.data.conversationId);
             }
             if (progressTaskState.has(progressId)) {
-                finalizeProgressTask(progressId, typeof window.t === 'function' ? window.t('tasks.statusCompleted') : '已完成');
+                const outcome = progressDoneOutcome(event.data);
+                const labelKey = outcome.icon === '✅' ? 'tasks.statusCompleted' : outcome.key;
+                finalizeProgressTask(progressId, typeof window.t === 'function' ? window.t(labelKey) : outcome.fallback);
             }
             
             // 检查时间线中是否有错误项
@@ -4201,7 +4217,7 @@ function handleStreamEvent(event, progressElement, progressId,
             // 立即刷新任务状态（确保任务状态同步）
             loadActiveTasks();
             // Close any remaining running tool calls for this progress (best-effort).
-            finalizeOutstandingToolCallsForProgress(progressId, 'failed');
+            finalizeOutstandingToolCallsForProgress(progressId, progressDoneOutcome(event.data).toolStatus);
             
             // 延迟再次刷新任务状态（确保后端已完成状态更新）
             setTimeout(() => {
@@ -7153,13 +7169,16 @@ function renderActiveTasks(tasks) {
         const statusMap = {
             'running': _t('tasks.statusRunning'),
             'cancelling': _t('tasks.statusCancelling'),
+            'cleaning': _t('tasks.statusCleaning'),
+            'cleanup_failed': _t('tasks.statusCleanupFailed'),
+            'cleanup_unconfirmed': _t('tasks.statusCleanupUnconfirmed'),
             'failed': _t('tasks.statusFailed'),
             'timeout': _t('tasks.statusTimeout'),
             'cancelled': _t('tasks.statusCancelled'),
             'completed': _t('tasks.statusCompleted')
         };
         const statusText = statusMap[task.status] || _t('tasks.statusRunning');
-        const isFinalStatus = ['failed', 'timeout', 'cancelled', 'completed'].includes(task.status);
+        const isFinalStatus = ['failed', 'timeout', 'cancelled', 'completed', 'cleanup_unconfirmed'].includes(task.status);
         const taskDisplayName = getActiveTaskDisplayName(task);
         const stopTaskBtnText = _t('tasks.stopTask');
 
@@ -7809,7 +7828,7 @@ function buildMcpTimelineSvg(points, rangeKey) {
     const maxVal = Math.max(1, ...points.map((p) => p.total || 0));
     const hasFailed = points.some((p) => (p.failed || 0) > 0);
     const hasBlocked = points.some((p) => (p.blocked || 0) > 0);
-    const locale = (typeof window.__locale === 'string' && window.__locale.startsWith('zh')) ? 'zh-CN' : 'en-US';
+    const locale = (typeof window.uiLocale === 'function' ? window.uiLocale() : 'en-US');
     const barGap = points.length > 48 ? 1 : 2;
     const barW = Math.max(1.6, Math.min(8, (plotW / Math.max(1, points.length)) - barGap));
 
@@ -8027,7 +8046,7 @@ function buildTimelineSparseHint(points, timeline) {
     if (nonZeroRatio > 0.3 && !peakNearEnd) return '';
 
     const rangeKey = timeline.range || getMcpMonitorTimelineRange();
-    const locale = (typeof window.__locale === 'string' && window.__locale.startsWith('zh')) ? 'zh-CN' : 'en-US';
+    const locale = (typeof window.uiLocale === 'function' ? window.uiLocale() : 'en-US');
     const peakTime = timeline.summary.peakAt
         ? formatMcpTimelineLabel(timeline.summary.peakAt, rangeKey, locale)
         : formatMcpTimelineLabel(points[peakIdx].t, rangeKey, locale);
@@ -8037,7 +8056,7 @@ function buildTimelineSparseHint(points, timeline) {
 
 function renderMcpTimelineActiveMoments(points, rangeKey) {
     if (!Array.isArray(points) || points.length === 0) return '';
-    const locale = (typeof window.__locale === 'string' && window.__locale.startsWith('zh')) ? 'zh-CN' : 'en-US';
+    const locale = (typeof window.uiLocale === 'function' ? window.uiLocale() : 'en-US');
     const active = points
         .map((p, i) => ({ ...p, i }))
         .filter((p) => (p.total || 0) > 0)
@@ -8587,7 +8606,7 @@ function renderMcpStatsStackedBar(success, failed) {
 function updateMonitorStatsSubtitle(lastFetchedAt, toolCount, retentionDays) {
     const subtitle = document.getElementById('monitor-stats-subtitle');
     if (!subtitle) return;
-    const locale = (typeof window.__locale === 'string' && window.__locale.startsWith('zh')) ? 'zh-CN' : 'en-US';
+    const locale = (typeof window.uiLocale === 'function' ? window.uiLocale() : 'en-US');
     const timeText = lastFetchedAt
         ? (lastFetchedAt.toLocaleString ? lastFetchedAt.toLocaleString(locale) : String(lastFetchedAt))
         : '—';
@@ -8984,7 +9003,7 @@ function renderMonitorStats(summary = null, topTools = [], lastFetchedAt = null)
     const hasCalls = effectiveTotal > 0;
     const successRateNum = hasCalls ? (totals.success / effectiveTotal) * 100 : 0;
     const successRate = hasCalls ? successRateNum.toFixed(1) : '-';
-    const locale = (typeof window.__locale === 'string' && window.__locale.startsWith('zh')) ? 'zh-CN' : 'en-US';
+    const locale = (typeof window.uiLocale === 'function' ? window.uiLocale() : 'en-US');
     const noCallsYet = mcpMonitorT('noCallsYet') || monitorFallback('暂无调用', 'No calls yet');
     const noCompletedYet = mcpMonitorT('noCompletedYet') || monitorFallback('暂无有效完成', 'No completed outcomes yet');
     const lastCallText = totals.lastCallTime
@@ -9078,7 +9097,7 @@ function renderMonitorExecutions(executions = [], statusFilter = 'all') {
         hard_timeout: 'statusHardTimeout',
         orphaned: 'statusOrphaned'
     };
-    const locale = (typeof window.__locale === 'string' && window.__locale.startsWith('zh')) ? 'zh-CN' : undefined;
+    const locale = (typeof window.uiLocale === 'function') ? window.uiLocale() : undefined;
     const rowEntries = executions
         .map(exec => {
             const status = getToolExecutionDisplayStatus(exec);

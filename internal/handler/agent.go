@@ -221,13 +221,19 @@ func (h *AgentHandler) CancelRunningTaskForConversation(conversationID string) {
 	if h == nil || conversationID == "" || h.tasks == nil {
 		return
 	}
-	h.cancelRunningMCPToolsForConversation(conversationID)
-	h.tasks.AbortActiveEinoExecute(conversationID, "")
-	if ok, err := h.tasks.CancelTask(conversationID, ErrTaskCancelled); ok {
-		h.logger.Info("已取消会话运行中任务", zap.String("conversationId", conversationID))
-	} else if err != nil {
-		h.logger.Warn("取消会话运行中任务失败", zap.String("conversationId", conversationID), zap.Error(err))
+	ok, err := h.tasks.CancelTask(conversationID, ErrTaskCancelled)
+	if !ok {
+		h.cancelRunningMCPToolsForConversation(conversationID)
+		h.tasks.AbortActiveEinoExecute(conversationID, "")
 	}
+	if h.logger != nil {
+		if err != nil {
+			h.logger.Warn("取消会话运行中任务失败", zap.String("conversationId", conversationID), zap.Error(err))
+		} else if ok {
+			h.logger.Info("已取消会话运行中任务", zap.String("conversationId", conversationID))
+		}
+	}
+
 }
 
 // ConversationTaskRuntimeState exposes the authoritative live state and start
@@ -757,9 +763,9 @@ func (h *AgentHandler) finalizeRobotAgentError(ctx context.Context, assistantMes
 
 func (h *AgentHandler) finalizeRobotAgentSuccess(taskCtx context.Context, assistantMessageID, conversationID string, resultMA *multiagent.RunResult) (string, string, error) {
 	reasoningContent := multiagent.AggregatedReasoningFromTraceJSON(resultMA.LastAgentTraceInput)
-	decision := h.decideAgentRunForDeliveryWithPolicy(conversationID, assistantMessageID, "robot", resultMA, resultMA.MCPExecutionIDs, true)
+	decision := h.decideAgentRunForDeliveryWithPolicy(conversationID, assistantMessageID, "robot", resultMA, resultMA.MCPExecutionIDs, false)
 	if cancelled := h.cleanupPendingToolExecutionsAfterIteration(taskCtx, conversationID, decision, nil); len(cancelled) > 0 {
-		decision = h.decideAgentRunForDeliveryWithPolicy(conversationID, assistantMessageID, "robot", resultMA, resultMA.MCPExecutionIDs, true)
+		decision = h.decideAgentRunForDeliveryWithPolicy(conversationID, assistantMessageID, "robot", resultMA, resultMA.MCPExecutionIDs, false)
 	}
 	h.persistFinalizationDecision(conversationID, assistantMessageID, "robot", resultMA.MCPExecutionIDs, reasoningContent, decision)
 	responseText := decision.FinalText
@@ -893,15 +899,24 @@ func (h *AgentHandler) ProcessMessageForRobot(ctx context.Context, platform stri
 	taskCtx, cancelWithCause := context.WithCancelCause(ctx)
 	defer cancelWithCause(nil)
 	taskStatus := "completed"
+	var taskRunID string
 	defer func() {
-		h.tasks.FinishTask(conversationID, taskStatus)
+		if taskRunID == "" {
+			return
+		}
+		if cleanupErr := h.tasks.FinishTaskRun(conversationID, taskRunID, taskStatus); cleanupErr != nil {
+			err = errors.Join(err, cleanupErr)
+		}
 	}()
-	if _, err := h.tasks.StartTask(conversationID, message, cancelWithCause); err != nil {
+	if startedTask, err := h.tasks.StartTask(conversationID, message, cancelWithCause); err != nil {
 		if errors.Is(err, ErrTaskAlreadyRunning) {
 			return "", conversationID, fmt.Errorf("当前会话已有任务正在执行中，请稍后再试")
 		}
 		return "", conversationID, fmt.Errorf("无法启动任务: %w", err)
+	} else {
+		taskRunID = startedTask.RunID
 	}
+	taskCtx = h.tasks.BindProcessScope(taskCtx, conversationID, taskRunID)
 	progressCallback := h.createProgressCallback(taskCtx, cancelWithCause, conversationID, assistantMessageID, nil)
 
 	robotMode := config.NormalizeAgentMode(agentMode)

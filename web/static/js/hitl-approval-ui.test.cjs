@@ -41,7 +41,9 @@ test('刷新恢复会话时先完成权威审批配置同步再允许发送', ()
     assert.match(chat, /await waitForHitlConfigReady\(hitlConversationAtSendStart\)/);
     assert.match(chat, /hitlConfigSyncConversationId = conversationId;[\s\S]{0,240}await hitlConfigSyncPromise;/);
     assert.match(chat, /await hitlConfigSyncPromise;[\s\S]{0,220}seq !== loadConversationRequestSeq/);
-    assert.match(fs.readFileSync('web/static/js/hitl.js', 'utf8'), /window\.csaiHitlDefaultReviewerReady = initHitlDefaultReviewerFromServer\(\)/);
+    const hitlPage = fs.readFileSync('web/static/js/hitl.js', 'utf8');
+    assert.match(hitlPage, /window\.csaiHitlDefaultConfigReady = initHitlDefaultReviewerFromServer\(\)/);
+    assert.match(hitlPage, /window\.csaiHitlDefaultReviewerReady = window\.csaiHitlDefaultConfigReady/);
 });
 
 test('同一会话的审批配置写入串行化以防止旧请求后到覆盖新选择', () => {
@@ -57,7 +59,7 @@ test('输入框可按会话通道获取模型并双向同步会话推理且审�
     assert.match(chat, /function currentHitlAuditModelLabel\(\)/);
     assert.match(chat, /const label = currentChatModelLabel\(\)/);
     assert.doesNotMatch(chat, /const label = data\.model \|\| currentChatModelLabel\(\)/);
-    assert.match(chat, /const approvalModel = auditAgent \? currentHitlAuditModelLabel\(\) : ''/);
+    assert.match(chat, /const approvalModel = auditAgent \? currentHitlAuditEngineLabel\(\) : ''/);
     assert.match(chat, /hitlAuditModel\.model\.trim\(\)/);
     assert.match(template, /id="chat-model-shortcut"[^>]+onclick="openChatSystemModelPicker\(event\)"/);
     assert.match(template, /id="chat-system-model-menu"[^>]+hidden/);
@@ -293,8 +295,8 @@ test('多对话并发时释放隐藏主流且旧请求不能覆盖新对话状�
     assert.match(chat, /signal: conversationLoadController\.signal/);
     assert.match(template, /monitor\.js\?v=20260907-blocked-1/);
     assert.match(template, /chat-scroll\.js\?v=20260815-1/);
-    assert.match(template, /chat\.js\?v=20260907-blocked-1/);
-    assert.match(template, /style\.css\?v=20260907-blocked-1/);
+    assert.match(template, /chat\.js\?v=[A-Za-z0-9._-]+/);
+    assert.match(template, /style\.css\?v=[A-Za-z0-9._-]+/);
 });
 
 test('彻底停止始终使用弹窗锁定的会话且状态刷新后仍会取消', () => {
@@ -359,6 +361,24 @@ test('旧会话首次升级到五分钟默认审批时限，仍允许用户之�
     assert.match(fs.readFileSync('web/static/js/hitl.js', 'utf8'), /shouldMigrateLegacyHitlTimeout/);
     assert.match(fs.readFileSync('web/static/js/hitl.js', 'utf8'), /timeoutSeconds: 300/);
     assert.match(fs.readFileSync('web/static/js/hitl.js', 'utf8'), /markLegacyHitlTimeoutMigrated/);
+});
+
+test('人机协同页和日志展示 Jev / OpenAI 审批引擎', () => {
+    const hitlPage = fs.readFileSync('web/static/js/hitl.js', 'utf8');
+    assert.match(template, /id="hitl-page-audit-engine"/);
+    assert.match(template, /id="hitl-log-detail-engine"/);
+    assert.match(hitlPage, /function hitlAuditEngineFromItem/);
+    assert.match(hitlPage, /function renderHitlPageAuditEngine/);
+    assert.match(hitlPage, /function renderHitlStrategyJevHint/);
+    assert.match(template, /id="hitl-strategy-hint-jev"/);
+    assert.equal(zh.hitl.strategyHintJev.includes('Jev'), true);
+    assert.equal(en.hitl.strategyHintJev.includes('Jev'), true);
+    assert.match(handler, /auditBackend/);
+    assert.match(chat, /function currentHitlAuditEngineLabel\(\)/);
+    assert.equal(zh.hitl.auditEngineJev, 'TypeSafe Jev');
+    assert.equal(en.hitl.auditEngineJev, 'TypeSafe Jev');
+    assert.equal(zh.hitl.auditEngineOpenAI, 'OpenAI 协议');
+    assert.equal(en.hitl.auditEngineOpenAI, 'OpenAI protocol');
 });
 
 test('审批体验文案具有完整中英文资源', () => {

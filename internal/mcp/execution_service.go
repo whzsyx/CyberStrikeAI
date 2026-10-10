@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"cyberstrike-ai/internal/authctx"
+	"cyberstrike-ai/internal/runlease"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -37,15 +38,18 @@ type ExecutionPreRunFunc func(context.Context, *ToolExecution) (func(), error)
 type ExecutionDoneFunc func(*ToolExecution)
 
 type ExecutionRequest struct {
-	ID             string
-	ToolName       string
-	Arguments      map[string]interface{}
-	ConversationID string
-	OwnerUserID    string
-	HardTimeout    time.Duration
-	PreRun         ExecutionPreRunFunc
-	Run            ExecutionRunFunc
-	OnDone         ExecutionDoneFunc
+	Remote bool
+	// A remote adapter may positively confirm server-side cancellation.
+	ConfirmCancellation func(context.Context) error
+	ID                  string
+	ToolName            string
+	Arguments           map[string]interface{}
+	ConversationID      string
+	OwnerUserID         string
+	HardTimeout         time.Duration
+	PreRun              ExecutionPreRunFunc
+	Run                 ExecutionRunFunc
+	OnDone              ExecutionDoneFunc
 }
 
 type ExecutionHandle struct {
@@ -57,13 +61,17 @@ type ExecutionSnapshot struct {
 }
 
 type executionEntry struct {
-	exec   *ToolExecution
-	cancel context.CancelFunc
-	done   chan struct{}
-	preRun ExecutionPreRunFunc
-	run    ExecutionRunFunc
-	result *ToolResult
-	err    error
+	releaseLease        func()
+	remote              bool
+	runStarted          bool
+	confirmCancellation func(context.Context) error
+	exec                *ToolExecution
+	cancel              context.CancelFunc
+	done                chan struct{}
+	preRun              ExecutionPreRunFunc
+	run                 ExecutionRunFunc
+	result              *ToolResult
+	err                 error
 }
 
 // ExecutionService keeps Eino-facing tool calls synchronous while moving the
@@ -145,18 +153,38 @@ func (s *ExecutionService) Submit(ctx context.Context, req ExecutionRequest) (*E
 	}
 
 	runCtx := detachedExecutionContext(ctx)
+	var executionDeadline time.Time
+	if ctx != nil {
+		executionDeadline, _ = ctx.Value(toolExecutionDeadlineKey{}).(time.Time)
+	}
+	if !executionDeadline.IsZero() {
+		remaining := time.Until(executionDeadline)
+		if remaining <= 0 {
+			remaining = time.Nanosecond
+		}
+		if req.HardTimeout <= 0 || remaining < req.HardTimeout {
+			req.HardTimeout = remaining
+		}
+	}
 	var cancel context.CancelFunc
 	if req.HardTimeout > 0 {
 		runCtx, cancel = context.WithTimeout(runCtx, req.HardTimeout)
 	} else {
 		runCtx, cancel = context.WithCancel(runCtx)
 	}
-	entry := &executionEntry{exec: exec, cancel: cancel, done: make(chan struct{}), preRun: req.PreRun, run: req.Run}
+	releaseLease, leaseErr := runlease.FromContext(ctx).Register(id, cancel)
+	if leaseErr != nil {
+		cancel()
+		return nil, leaseErr
+	}
+	entry := &executionEntry{exec: exec, cancel: cancel, done: make(chan struct{}), preRun: req.PreRun, run: req.Run,
+		releaseLease: releaseLease, remote: req.Remote, confirmCancellation: req.ConfirmCancellation}
 
 	s.mu.Lock()
 	if _, exists := s.entries[id]; exists {
 		s.mu.Unlock()
 		cancel()
+		releaseLease()
 		return nil, fmt.Errorf("execution already exists: %s", id)
 	}
 	s.entries[id] = entry
@@ -188,8 +216,15 @@ func (s *ExecutionService) runWorker(ctx context.Context, entry *executionEntry,
 		entry.cancel()
 		notifyToolRunEnd(ctx, id)
 		close(entry.done)
+		if entry.releaseLease != nil {
+			entry.releaseLease()
+		}
 	}()
 
+	if ctx.Err() != nil {
+		s.finishEntry(ctx, entry, nil, ctx.Err(), onDone)
+		return
+	}
 	if entry.preRun != nil {
 		var preErr error
 		release, preErr = entry.preRun(ctx, cloneToolExecution(entry.exec))
@@ -198,7 +233,12 @@ func (s *ExecutionService) runWorker(ctx context.Context, entry *executionEntry,
 			return
 		}
 	}
+	if ctx.Err() != nil {
+		s.finishEntry(ctx, entry, nil, ctx.Err(), onDone)
+		return
+	}
 	s.markEntryRunning(entry)
+	entry.runStarted = true
 
 	result, err := entryResultRecover(ctx, entry.exec.ToolName, s.logger, func() (*ToolResult, error) {
 		return nilSafeRun(ctx, entry)
@@ -225,9 +265,20 @@ func (s *ExecutionService) markEntryRunning(entry *executionEntry) {
 
 func (s *ExecutionService) finishEntry(ctx context.Context, entry *executionEntry, result *ToolResult, err error, onDone ExecutionDoneFunc) {
 	id := entry.exec.ID
+	if err == nil && ctx != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		if deadline, ok := ctx.Value(toolExecutionDeadlineKey{}).(time.Time); ok && !deadline.IsZero() {
+			err = context.DeadlineExceeded
+		}
+	}
 	var blockedErr *toolGuardBlockError
 	if errors.As(err, &blockedErr) {
 		result, err = blockedErr.result, nil
+	}
+	cancellationUnconfirmed := entry.remote && entry.runStarted && ctx.Err() != nil && err != nil
+	if cancellationUnconfirmed && entry.confirmCancellation != nil {
+		confirmCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		cancellationUnconfirmed = entry.confirmCancellation(confirmCtx) != nil
+		cancel()
 	}
 	cancelledWithUserNote := s.applyAbortUserNoteToCancelledToolResult(id, &result, &err)
 
@@ -286,6 +337,11 @@ func (s *ExecutionService) finishEntry(ctx context.Context, entry *executionEntr
 			entry.result = result
 		}
 		entry.exec.Result = result
+	}
+	if cancellationUnconfirmed {
+		entry.exec.Status = ToolExecutionStatusOrphaned
+		entry.exec.Error = "取消已请求，但远端 MCP 未确认执行已停止"
+		runlease.FromContext(ctx).MarkUnconfirmed(id, entry.exec.Error)
 	}
 	finalExec := cloneToolExecution(entry.exec)
 	s.mu.Unlock()

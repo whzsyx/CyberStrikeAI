@@ -7,12 +7,32 @@ import (
 	"strings"
 	"time"
 
+	"cyberstrike-ai/internal/agentfinalizer"
 	"cyberstrike-ai/internal/config"
 	workflowrunner "cyberstrike-ai/internal/workflow"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
+
+func (h *AgentHandler) finalizeWorkflowRunForDelivery(conversationID, messageID string, result *workflowrunner.RunResult) agentfinalizer.Decision {
+	in := agentfinalizer.Input{ConversationID: conversationID, AssistantMessageID: messageID, AgentMode: "workflow"}
+	if result == nil {
+		in.Status = agentfinalizer.StatusFailed
+		in.Response = "工作流未返回执行结果。"
+	} else {
+		in.Response = result.Response
+		in.AwaitingHITL = result.AwaitingHITL
+		in.Status = result.Status
+		if result.Status == "rejected" {
+			in.Status = agentfinalizer.StatusCancelled
+			in.CompletionReason = "workflow_rejected"
+		}
+	}
+	decision := agentfinalizer.Decide(h.db, in)
+	h.persistFinalizationDecision(conversationID, messageID, "workflow", nil, "", decision)
+	return decision
+}
 
 func (h *AgentHandler) roleForWorkflow(req *ChatRequest) (config.RoleConfig, bool) {
 	if h == nil || h.config == nil || h.config.Roles == nil || req == nil {
@@ -55,9 +75,10 @@ func (h *AgentHandler) runRoleWorkflowStreamIfBound(
 
 	taskStatus := "completed"
 	taskOwned := false
+	var taskRunID string
 	defer func() {
 		if taskOwned {
-			h.tasks.FinishTask(conversationID, taskStatus)
+			h.tasks.FinishTaskRun(conversationID, taskRunID, taskStatus)
 		}
 	}()
 
@@ -69,7 +90,7 @@ func (h *AgentHandler) runRoleWorkflowStreamIfBound(
 	taskCtx, timeoutCancel := context.WithTimeout(baseCtx, 600*time.Minute)
 	defer timeoutCancel()
 
-	if _, err := h.tasks.StartTask(conversationID, userMessage, cancelWithCause); err != nil {
+	if startedTask, err := h.tasks.StartTask(conversationID, userMessage, cancelWithCause); err != nil {
 		var errorMsg string
 		if errors.Is(err, ErrTaskAlreadyRunning) {
 			errorMsg = "⚠️ 当前会话已有任务正在执行中，请等待当前任务完成或点击「停止任务」后再尝试。"
@@ -86,8 +107,13 @@ func (h *AgentHandler) runRoleWorkflowStreamIfBound(
 		}
 		sendEvent("done", "", map[string]interface{}{"conversationId": conversationID})
 		return true
+	} else {
+		taskRunID = startedTask.RunID
 	}
+	baseCtx = h.tasks.BindProcessScope(baseCtx, conversationID, taskRunID)
+	taskCtx = h.tasks.BindProcessScope(taskCtx, conversationID, taskRunID)
 	taskOwned = true
+	sendEvent = h.taskFinishingEventSender(sendEvent, conversationID, taskRunID, func() string { return taskStatus })
 
 	progress := h.createProgressCallback(taskCtx, cancelWithCause, conversationID, assistantMessageID, sendEvent)
 	result, err := workflowrunner.RunRoleBoundWorkflow(taskCtx, workflowrunner.RunArgs{
@@ -152,16 +178,7 @@ func (h *AgentHandler) runRoleWorkflowStreamIfBound(
 		sendEvent("done", "", map[string]interface{}{"conversationId": conversationID})
 		return true
 	}
-	decision := h.finalizeCandidateForDeliveryWithPolicy(
-		prep.ConversationID,
-		prep.AssistantMessageID,
-		"workflow",
-		result.Response,
-		nil,
-		result.AwaitingHITL,
-		"",
-		true,
-	)
+	decision := h.finalizeWorkflowRunForDelivery(prep.ConversationID, prep.AssistantMessageID, result)
 	responseText := decision.FinalText
 	if !decision.Finalizable {
 		responseText = finalizationBlockedMessage(decision)
@@ -202,9 +219,10 @@ func (h *AgentHandler) runRoleWorkflowJSONIfBound(c *gin.Context, req *ChatReque
 
 	taskStatus := "completed"
 	taskOwned := false
+	var taskRunID string
 	defer func() {
 		if taskOwned {
-			h.tasks.FinishTask(conversationID, taskStatus)
+			h.tasks.FinishTaskRun(conversationID, taskRunID, taskStatus)
 		}
 	}()
 
@@ -213,7 +231,7 @@ func (h *AgentHandler) runRoleWorkflowJSONIfBound(c *gin.Context, req *ChatReque
 	taskCtx, timeoutCancel := context.WithTimeout(baseCtx, 600*time.Minute)
 	defer timeoutCancel()
 
-	if _, err := h.tasks.StartTask(conversationID, userMessage, cancelWithCause); err != nil {
+	if startedTask, err := h.tasks.StartTask(conversationID, userMessage, cancelWithCause); err != nil {
 		if errors.Is(err, ErrTaskAlreadyRunning) {
 			c.JSON(http.StatusConflict, gin.H{
 				"error":          "⚠️ 当前会话已有任务正在执行中，请等待当前任务完成或点击「停止任务」后再尝试。",
@@ -224,8 +242,13 @@ func (h *AgentHandler) runRoleWorkflowJSONIfBound(c *gin.Context, req *ChatReque
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "❌ 无法启动任务: " + err.Error()})
 		}
 		return true
+	} else {
+		taskRunID = startedTask.RunID
 	}
+	baseCtx = h.tasks.BindProcessScope(baseCtx, conversationID, taskRunID)
+	taskCtx = h.tasks.BindProcessScope(taskCtx, conversationID, taskRunID)
 	taskOwned = true
+	respond := h.taskFinishingJSONResponder(c, conversationID, taskRunID, func() string { return taskStatus })
 
 	progress := h.createProgressCallback(taskCtx, cancelWithCause, conversationID, assistantMessageID, nil)
 	result, err := workflowrunner.RunRoleBoundWorkflow(taskCtx, workflowrunner.RunArgs{
@@ -253,7 +276,7 @@ func (h *AgentHandler) runRoleWorkflowJSONIfBound(c *gin.Context, req *ChatReque
 				_ = h.appendAssistantMessageNotice(assistantMessageID, cancelMsg)
 				_ = h.db.AddProcessDetail(assistantMessageID, conversationID, "cancelled", cancelMsg, nil)
 			}
-			c.JSON(http.StatusOK, gin.H{
+			respond(http.StatusOK, gin.H{
 				"status":         "cancelled",
 				"message":        cancelMsg,
 				"conversationId": conversationID,
@@ -265,25 +288,16 @@ func (h *AgentHandler) runRoleWorkflowJSONIfBound(c *gin.Context, req *ChatReque
 		if assistantMessageID != "" {
 			_, _ = h.db.Exec("UPDATE messages SET content = ?, updated_at = ? WHERE id = ?", errMsg, time.Now(), assistantMessageID)
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": errMsg, "conversationId": conversationID})
+		respond(http.StatusInternalServerError, gin.H{"error": errMsg, "conversationId": conversationID})
 		return true
 	}
-	decision := h.finalizeCandidateForDeliveryWithPolicy(
-		prep.ConversationID,
-		prep.AssistantMessageID,
-		"workflow",
-		result.Response,
-		nil,
-		result.AwaitingHITL,
-		"",
-		true,
-	)
+	decision := h.finalizeWorkflowRunForDelivery(prep.ConversationID, prep.AssistantMessageID, result)
 	responseText := decision.FinalText
 	if !decision.Finalizable {
 		responseText = finalizationBlockedMessage(decision)
 		taskStatus = decision.Status
 	}
-	c.JSON(http.StatusOK, gin.H{
+	respond(http.StatusOK, gin.H{
 		"response":            responseText,
 		"conversationId":      prep.ConversationID,
 		"assistantMessageId":  prep.AssistantMessageID,
