@@ -69,11 +69,35 @@ ai:
 | `ai.default_channel` | 默认通道 ID。新对话、机器人、批量任务和未显式选择通道的请求使用它。 |
 | `ai.channels.<id>` | 通道配置。ID 会归一化为小写、数字和短横线，例如 `Qwen_Max` 会变成 `qwen-max`。 |
 | `name` | Web UI 展示名。留空时使用通道 ID。 |
-| `provider` | `openai_compatible` 或 `claude`。`openai_compatible` 会在运行时映射为 `openai`；`claude` 使用 Eino 原生 Anthropic Messages API。 |
+| `provider` | `openai_compatible` 或 `claude`。`openai_compatible` 会在运行时映射为 `openai`；`claude` 使用 Pi 原生 Anthropic Messages API。 |
 | `base_url/api_key/model` | 必填。Base URL 通常需要包含版本路径，如 OpenAI/兼容网关的 `/v1`。 |
 | `max_total_tokens` | 上下文压缩、攻击链构建、多代理摘要等共用的总预算。 |
 | `max_completion_tokens` | 单次模型输出上限；未填时使用默认值。 |
+| `context_window` | 运行时上下文窗口，0 表示未知。保存通道时可自动填入服务报告的窗口，已填写的更小窗口优先。 |
+| `context_profile` | 后台策略，默认 `auto`。识别本地服务后记录 `local_auto`。配置文件支持手动 `local`、显式节省 `economy` 和使用运行时参数的 `custom`。 |
 | `reasoning` | 该通道的默认推理扩展字段。不同网关支持差异较大，异常时先尝试 `mode: off`。 |
+
+### 自动输入优化
+
+DeepSeek 官方地址、明确的 DeepSeek 推理线路或包含 DeepSeek 的模型名会自动启用输入节省。达到 16 个工具时使用按需发现，默认常驻前 6 个工具、核心工具及显式常驻清单。JSON 回包精简格式空白。有授权的本地读取工具时，超过 8,000 字节的结果保存全文并返回可回读的预览。推理 Token 单列统计且计入输出总量。
+
+保存通道和测试连接会探测 Ollama、llama.cpp、LM Studio、vLLM 和 oMLX 的元数据。oMLX 通过 `owned_by: omlx` 识别，优先读取 `/v1/models/status` 的匹配模型或别名窗口，权限不足时回退到模型列表。普通兼容响应和内网 IP 本身不足以触发本地策略。探测失败可继续保存。
+
+本地输入预算取窗口的 60%，上限 131,072 Token，并预留输出空间。窗口未知时使用 32,768 的保守窗口。工具发现和回包上限按本地窗口收紧，输出字段使用 `max_tokens`。模型只报告架构上限时，新通道保留窗口未知状态。切换模型或服务会清除旧的自动判定。页面在后台应用这些策略。
+
+验证成本时，应比较完整任务的输入、缓存命中、输出及调用次数。工具搜索和分段回读可能增加调用。已有配置文件的显式覆盖继续生效。
+
+### 按提供商和模型关闭推理
+
+使用 `reasoning.mode: off`，或在对话中选择“推理 → 关闭”。实际请求参数按通道区分：
+
+- 官方 `https://api.openai.com/v1`、OpenAI 兼容提供商、`auto` 或 `openai_compat` profile 下，已知支持 `none` 的模型发送 `reasoning_effort: "none"`。覆盖 GPT-5.5、GPT-5.6（Sol/Terra/Luna 及 `gpt-5.6` 别名）、GPT-6 Sol/Luna 和对应日期快照；这些模型也接受配置或请求中的 `reasoning.effort: none`。Planner 的强制工具选择同样保留显式 `none`。
+- DeepSeek 在 `auto` 或 `deepseek_compat` profile 下，关闭时仍发送 `thinking: {type: disabled}`。显式 profile 优先于自动识别。
+- 其他模型和第三方兼容网关保持原有行为：关闭时省略推理字段。第三方网关使用 OpenAI 同名模型，不会被自动视为官方服务。
+
+GPT-5.6 和 GPT-6 Sol/Luna 在 Chat Completions 中使用函数工具时，应明确选择“关闭”；不指定强度会采用模型默认推理，不等同于关闭。工具与推理不兼容时会提示关闭推理，不会静默改写用户选择的强度。GPT-6.1 Sol 和 GPT-6 Astra 不支持 `none`，工具调用必须使用 Responses；当前 Chat Completions 后端会明确提示该限制，需要选择兼容模型。仅把 `base_url` 改成 Responses URL 不能完成协议适配。详见 [OpenAI 官方推理说明](https://developers.openai.com/api/docs/guides/reasoning)。
+
+`allow_client_reasoning: false` 时忽略对话或请求的推理覆盖，按通道设置执行。
 
 对话页的“AI 通道”下拉框会读取已保存通道。请求体中的 `aiChannelId` 非空时仅对本次/本会话运行配置生效，不会把 API Key 发送给模型；为空时跟随 `ai.default_channel`。
 
@@ -130,9 +154,9 @@ hitl:
 ```yaml
 multi_agent:
   enabled: true
-  robot_default_agent_mode: eino_single
+  robot_default_agent_mode: single
   batch_use_multi_agent: false
-  eino_skills:
+  skills:
     disable: false
     filesystem_tools: true
     skill_tool_name: skill
@@ -140,7 +164,7 @@ multi_agent:
 
 支持模式：
 
-- `eino_single`：Eino 单代理。
+- `single`：Pi 单代理。
 - `deep`：DeepAgent 风格多代理。
 - `plan_execute`：规划、执行、重规划。
 - `supervisor`：主管代理转交子代理。
@@ -243,7 +267,7 @@ storage:
 | `workspace` | 30 天 | Agent 工作区 `tmp/workspace` |
 | `reduction` | 7 天 | 超长工具输出落盘 `tmp/reduction` |
 | `conversation_artifacts` | 30 天 | 摘要与超长输入台账 `data/conversation_artifacts` |
-| `plantask` | 30 天 | 多代理计划看板 `skills/.eino/plantask` |
+| `plantask` | 30 天 | 多代理计划看板 `skills/.pi/plantask` |
 | `c2_artifacts` | 30 天 | C2 回传/上传/下发/payload `tmp/c2`（清理 payload 后下载链接失效） |
 | `chat_uploads` | 90 天 | 对话上传附件 `chat_uploads` |
 | `workflow_checkpoints` | 7 天 | 工作流断点 `data/workflow-checkpoints` |
@@ -256,12 +280,15 @@ c2:
   enabled: true
 project:
   enabled: true
+  context_checkpoints: true
+  # 续接补充包含在事实索引预算内；工作文件候选清单另有最多 4000 字符预算
   fact_index_max_runes: 65000
 ```
 
 - `c2.enabled`：关闭后不启动 C2 监听器，也不注册 C2 MCP 工具。
 - WebShell 连接配置存 SQLite，没有单独的主配置开关。
-- `project` 控制跨对话事实黑板注入预算。
+- `project` 控制跨对话事实黑板注入预算。[项目续聊与成果复用](project-resume.md) 说明脚本登记、测试结果与续接流程。
+- `project.context_checkpoints` 默认开启：已绑定项目的会话成功压缩时，将续接摘要自动保存为 `note/context-*`（tentative），按会话及主/子代理分别更新，不覆盖已确认事实。完整原始记录保存为不可变快照，后续可通过 `get_project_fact` 与 `read_file` 找回。关闭此项仅停止自动黑板记录，仍保留原始上下文快照。详见 [长上下文续接留存](blackboard-context-memory.md)。
 
 ## 机器人
 
